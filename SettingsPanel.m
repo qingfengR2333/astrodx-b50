@@ -77,6 +77,14 @@ static UIColor *ColorFromHex(NSString *hex)
 @property (nonatomic, strong) UITextField *textField;
 @property (nonatomic, strong) UISegmentedControl *triggerSeg;
 @property (nonatomic, strong) NSMutableArray<UIButton *> *swatches;
+
+- (UIStackView *)sliderRowForAlpha:(BOOL)isAlpha unit:(NSString *)unit;
+- (UILabel *)sectionTitle:(NSString *)text;
+- (UILabel *)hint:(NSString *)text;
+- (UIView *)spacer:(CGFloat)h;
+- (void)applyAlpha:(CGFloat)pct;
+- (void)applySize:(CGFloat)v;
+- (void)refreshSwatches;
 @end
 
 @implementation ADXSettingsPanel
@@ -153,7 +161,7 @@ static UIColor *ColorFromHex(NSString *hex)
 
     // 3. 透明度
     [stack addArrangedSubview:[self sectionTitle:@"透明度"]];
-    UIStackView *alphaRow = [self sliderRow:&_alphaSlider field:&_alphaField unit:@"%"];
+    UIStackView *alphaRow = [self sliderRowForAlpha:YES unit:@"%"];
     [self.alphaSlider addTarget:self action:@selector(alphaSliderChanged) forControlEvents:UIControlEventValueChanged];
     [self.alphaField addTarget:self action:@selector(alphaFieldChanged) forControlEvents:UIControlEventEditingDidEnd];
     [stack addArrangedSubview:alphaRow];
@@ -181,7 +189,7 @@ static UIColor *ColorFromHex(NSString *hex)
 
     // 5. 大小
     [stack addArrangedSubview:[self sectionTitle:@"悬浮球大小"]];
-    UIStackView *sizeRow = [self sliderRow:&_sizeSlider field:&_sizeField unit:@"pt"];
+    UIStackView *sizeRow = [self sliderRowForAlpha:NO unit:@"pt"];
     [self.sizeSlider addTarget:self action:@selector(sizeSliderChanged) forControlEvents:UIControlEventValueChanged];
     [self.sizeField addTarget:self action:@selector(sizeFieldChanged) forControlEvents:UIControlEventEditingDidEnd];
     [stack addArrangedSubview:sizeRow];
@@ -223,7 +231,7 @@ static UIColor *ColorFromHex(NSString *hex)
     return v;
 }
 
-- (UIStackView *)sliderRow:(UISlider **)sliderOut field:(UITextField **)fieldOut unit:(NSString *)unit
+- (UIStackView *)sliderRowForAlpha:(BOOL)isAlpha unit:(NSString *)unit
 {
     UIStackView *row = [[UIStackView alloc] init];
     row.axis = UILayoutConstraintAxisHorizontal;
@@ -249,8 +257,14 @@ static UIColor *ColorFromHex(NSString *hex)
     [row addArrangedSubview:field];
     [row addArrangedSubview:unitLabel];
 
-    *sliderOut = slider;
-    *fieldOut = field;
+    // 直接存进属性，避免对 ivar 取地址（ARC 不允许）
+    if (isAlpha) {
+        self.alphaSlider = slider;
+        self.alphaField = field;
+    } else {
+        self.sizeSlider = slider;
+        self.sizeField = field;
+    }
     return row;
 }
 
