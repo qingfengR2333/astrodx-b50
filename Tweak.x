@@ -43,7 +43,7 @@ static UIColor *ADXDiffColor(int d)
         [[UIBarButtonItem alloc] initWithTitle:@"重新读取" style:UIBarButtonItemStylePlain
                                         target:self action:@selector(reloadData)];
     UIBarButtonItem *exportItem =
-        [[UIBarButtonItem alloc] initWithTitle:@"导出图" style:UIBarButtonItemStylePlain
+        [[UIBarButtonItem alloc] initWithTitle:@"导出 b50 成绩图" style:UIBarButtonItemStylePlain
                                         target:self action:@selector(exportImage)];
     // 数组第一个在最右边
     self.navigationItem.rightBarButtonItems = @[exportItem, reloadItem];
@@ -231,6 +231,7 @@ static UIGestureRecognizer *gTapOnce;
 static UIGestureRecognizer *gTapTwice;
 static UIGestureRecognizer *gLongPress;
 static CGSize gScreenSize;
+static UINavigationController *gB50Nav;
 
 + (UIWindowScene *)activeScene
 {
@@ -250,6 +251,29 @@ static CGSize gScreenSize;
         if (sz.width <= side * 0.80 && sz.height <= side * 0.60) return font;
     }
     return [UIFont boldSystemFontOfSize:8];
+}
+
++ (void)rebuildB50Items
+{
+    if (!gB50Nav) return;
+    UIViewController *vc = gB50Nav.topViewController;
+
+    NSMutableArray *items = [NSMutableArray array];
+    [items addObject:[[UIBarButtonItem alloc] initWithTitle:@"关闭"
+                                                      style:UIBarButtonItemStylePlain
+                                                     target:self
+                                                     action:@selector(closePanel)]];
+    if ([ADXSettings showScoresButton])
+        [items addObject:[[UIBarButtonItem alloc] initWithTitle:@"导出分表"
+                                                          style:UIBarButtonItemStylePlain
+                                                         target:vc
+                                                         action:@selector(exportScoresCsv)]];
+    if ([ADXSettings showB50Button])
+        [items addObject:[[UIBarButtonItem alloc] initWithTitle:@"导出b50表"
+                                                          style:UIBarButtonItemStylePlain
+                                                         target:vc
+                                                         action:@selector(exportB50Csv)]];
+    vc.navigationItem.leftBarButtonItems = items;
 }
 
 + (void)applySettings
@@ -272,6 +296,9 @@ static CGSize gScreenSize;
     gBallLabel.frame = gBall.bounds;
     gBallLabel.text = [ADXSettings text];
     gBallLabel.font = [self fontForBall:side text:gBallLabel.text];
+    gBallLabel.textColor = [UIColor colorWithWhite:1 alpha:[ADXSettings textAlpha]];
+
+    [self rebuildB50Items];
 
     NSInteger t = [ADXSettings trigger];
     gTapOnce.enabled = (t == 0);
@@ -389,16 +416,8 @@ static CGSize gScreenSize;
                                                       image:[UIImage systemImageNamed:@"chart.bar.fill"]
                                                         tag:0];
 
-    UIBarButtonItem *close1 =
-        [[UIBarButtonItem alloc] initWithTitle:@"关闭" style:UIBarButtonItemStylePlain
-                                        target:self action:@selector(closePanel)];
-    UIBarButtonItem *csvScores =
-        [[UIBarButtonItem alloc] initWithTitle:@"导出分表" style:UIBarButtonItemStylePlain
-                                        target:b50 action:@selector(exportScoresCsv)];
-    UIBarButtonItem *csvB50 =
-        [[UIBarButtonItem alloc] initWithTitle:@"导出b50表" style:UIBarButtonItemStylePlain
-                                        target:b50 action:@selector(exportB50Csv)];
-    b50.navigationItem.leftBarButtonItems = @[close1, csvScores, csvB50];
+    gB50Nav = navB50;
+    [self rebuildB50Items];
 
     ADXImportPanel *imp = [ADXImportPanel new];
     UINavigationController *navImp = [[UINavigationController alloc] initWithRootViewController:imp];
@@ -428,6 +447,7 @@ static CGSize gScreenSize;
 {
     gPanelWindow.hidden = YES;
     gPanelWindow = nil;
+    gB50Nav = nil;
 }
 
 @end

@@ -9,6 +9,9 @@ static NSString *const kColorKey   = @"adx.color";
 static NSString *const kAlphaKey   = @"adx.alpha";
 static NSString *const kTextKey    = @"adx.text";
 static NSString *const kSizeKey    = @"adx.size";
+static NSString *const kTextAlphaKey = @"adx.textAlpha";
+static NSString *const kShowScoresKey = @"adx.showScores";
+static NSString *const kShowB50Key    = @"adx.showB50";
 
 static NSString *HexFromColor(UIColor *c)
 {
@@ -65,12 +68,33 @@ static UIColor *ColorFromHex(NSString *hex)
     return MIN(96, MAX(40, s));
 }
 
++ (CGFloat)textAlpha
+{
+    id v = [[self d] objectForKey:kTextAlphaKey];
+    CGFloat a = v ? [[self d] doubleForKey:kTextAlphaKey] : 1.0;
+    return MIN(1.0, MAX(0.05, a));
+}
+
++ (BOOL)showScoresButton
+{
+    id v = [[self d] objectForKey:kShowScoresKey];
+    return v ? [[self d] boolForKey:kShowScoresKey] : YES;
+}
+
++ (BOOL)showB50Button
+{
+    id v = [[self d] objectForKey:kShowB50Key];
+    return v ? [[self d] boolForKey:kShowB50Key] : YES;
+}
+
 @end
 
 #pragma mark - 面板
 
 @interface ADXSettingsPanel () <UITextFieldDelegate>
 @property (nonatomic, strong) UISlider *alphaSlider;
+@property (nonatomic, strong) UISlider *textAlphaSlider;
+@property (nonatomic, strong) UITextField *textAlphaField;
 @property (nonatomic, strong) UISlider *sizeSlider;
 @property (nonatomic, strong) UITextField *alphaField;
 @property (nonatomic, strong) UITextField *sizeField;
@@ -79,6 +103,9 @@ static UIColor *ColorFromHex(NSString *hex)
 @property (nonatomic, strong) NSMutableArray<UIButton *> *swatches;
 
 - (UIStackView *)sliderRowForAlpha:(BOOL)isAlpha unit:(NSString *)unit;
+- (UIStackView *)sliderRowForTextAlpha:(NSString *)unit;
+- (UILabel *)bigTitle:(NSString *)text;
+- (UIStackView *)switchRow:(NSString *)title on:(BOOL)on action:(SEL)action;
 - (UILabel *)sectionTitle:(NSString *)text;
 - (UILabel *)hint:(NSString *)text;
 - (UIView *)spacer:(CGFloat)h;
@@ -117,6 +144,8 @@ static UIColor *ColorFromHex(NSString *hex)
         [stack.bottomAnchor constraintEqualToAnchor:scroll.bottomAnchor constant:-24],
         [stack.widthAnchor constraintEqualToAnchor:scroll.widthAnchor constant:-32]
     ]];
+
+    [stack addArrangedSubview:[self bigTitle:@"悬浮球"]];
 
     // 1. 触发方式
     [stack addArrangedSubview:[self sectionTitle:@"触发方式"]];
@@ -159,16 +188,26 @@ static UIColor *ColorFromHex(NSString *hex)
 
     [stack addArrangedSubview:[self spacer:10]];
 
-    // 3. 透明度
-    [stack addArrangedSubview:[self sectionTitle:@"透明度"]];
+    // 3. 背景透明度
+    [stack addArrangedSubview:[self sectionTitle:@"背景透明度"]];
     UIStackView *alphaRow = [self sliderRowForAlpha:YES unit:@"%"];
     [self.alphaSlider addTarget:self action:@selector(alphaSliderChanged) forControlEvents:UIControlEventValueChanged];
     [self.alphaField addTarget:self action:@selector(alphaFieldChanged) forControlEvents:UIControlEventEditingDidEnd];
     [stack addArrangedSubview:alphaRow];
-    self.alphaSlider.minimumValue = 10;
+    self.alphaSlider.minimumValue = 5;
     self.alphaSlider.maximumValue = 100;
     self.alphaSlider.value = [ADXSettings alpha] * 100;
     self.alphaField.text = [NSString stringWithFormat:@"%d", (int)lround([ADXSettings alpha] * 100)];
+
+    // 3b. 字体透明度
+    [stack addArrangedSubview:[self spacer:6]];
+    [stack addArrangedSubview:[self sectionTitle:@"字体透明度"]];
+    UIStackView *textAlphaRow = [self sliderRowForTextAlpha:@"%"];
+    [stack addArrangedSubview:textAlphaRow];
+    self.textAlphaSlider.minimumValue = 5;
+    self.textAlphaSlider.maximumValue = 100;
+    self.textAlphaSlider.value = [ADXSettings textAlpha] * 100;
+    self.textAlphaField.text = [NSString stringWithFormat:@"%d", (int)lround([ADXSettings textAlpha] * 100)];
 
     [stack addArrangedSubview:[self spacer:10]];
 
@@ -198,6 +237,15 @@ static UIColor *ColorFromHex(NSString *hex)
     self.sizeSlider.value = [ADXSettings size];
     self.sizeField.text = [NSString stringWithFormat:@"%d", (int)lround([ADXSettings size])];
     [stack addArrangedSubview:[self hint:@"范围 40～96 pt"]];
+
+    [stack addArrangedSubview:[self spacer:18]];
+    [stack addArrangedSubview:[self bigTitle:@"功能"]];
+    [stack addArrangedSubview:[self switchRow:@"首页显示「导出分表」按钮"
+                                          on:[ADXSettings showScoresButton]
+                                      action:@selector(toggleScores:)]];
+    [stack addArrangedSubview:[self switchRow:@"首页显示「导出 b50 表」按钮"
+                                          on:[ADXSettings showB50Button]
+                                      action:@selector(toggleB50:)]];
 
     UITapGestureRecognizer *tap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(endEditing)];
     tap.cancelsTouchesInView = NO;
@@ -268,6 +316,69 @@ static UIColor *ColorFromHex(NSString *hex)
     return row;
 }
 
+- (UILabel *)bigTitle:(NSString *)text
+{
+    UILabel *l = [[UILabel alloc] init];
+    l.text = text;
+    l.font = [UIFont boldSystemFontOfSize:22];
+    return l;
+}
+
+- (UIStackView *)switchRow:(NSString *)title on:(BOOL)on action:(SEL)action
+{
+    UIStackView *row = [[UIStackView alloc] init];
+    row.axis = UILayoutConstraintAxisHorizontal;
+    row.alignment = UIStackViewAlignmentCenter;
+
+    UILabel *l = [[UILabel alloc] init];
+    l.text = title;
+    l.font = [UIFont systemFontOfSize:14];
+    l.numberOfLines = 0;
+
+    UISwitch *sw = [[UISwitch alloc] init];
+    sw.on = on;
+    [sw addTarget:self action:action forControlEvents:UIControlEventValueChanged];
+
+    [row addArrangedSubview:l];
+    [row addArrangedSubview:sw];
+    return row;
+}
+
+- (UIStackView *)sliderRowForTextAlpha:(NSString *)unit
+{
+    UIStackView *row = [[UIStackView alloc] init];
+    row.axis = UILayoutConstraintAxisHorizontal;
+    row.spacing = 10;
+    row.alignment = UIStackViewAlignmentCenter;
+
+    UISlider *slider = [[UISlider alloc] init];
+    [slider addTarget:self action:@selector(textAlphaSliderChanged)
+     forControlEvents:UIControlEventValueChanged];
+
+    UITextField *field = [[UITextField alloc] init];
+    field.borderStyle = UITextBorderStyleRoundedRect;
+    field.textAlignment = NSTextAlignmentCenter;
+    field.keyboardType = UIKeyboardTypeNumberPad;
+    field.delegate = self;
+    [field addTarget:self action:@selector(textAlphaFieldChanged)
+    forControlEvents:UIControlEventEditingDidEnd];
+    [field.widthAnchor constraintEqualToConstant:64].active = YES;
+    [field.heightAnchor constraintEqualToConstant:36].active = YES;
+
+    UILabel *unitLabel = [[UILabel alloc] init];
+    unitLabel.text = unit;
+    unitLabel.font = [UIFont systemFontOfSize:12];
+    unitLabel.textColor = [UIColor secondaryLabelColor];
+
+    [row addArrangedSubview:slider];
+    [row addArrangedSubview:field];
+    [row addArrangedSubview:unitLabel];
+
+    self.textAlphaSlider = slider;
+    self.textAlphaField = field;
+    return row;
+}
+
 #pragma mark - 动作
 
 - (void)triggerChanged
@@ -303,7 +414,7 @@ static UIColor *ColorFromHex(NSString *hex)
 
 - (void)applyAlpha:(CGFloat)pct
 {
-    pct = MIN(100, MAX(10, pct));
+    pct = MIN(100, MAX(5, pct));
     self.alphaSlider.value = pct;
     self.alphaField.text = [NSString stringWithFormat:@"%d", (int)lround(pct)];
     [[NSUserDefaults standardUserDefaults] setDouble:pct / 100.0 forKey:kAlphaKey];
@@ -312,6 +423,30 @@ static UIColor *ColorFromHex(NSString *hex)
 
 - (void)alphaSliderChanged { [self applyAlpha:self.alphaSlider.value]; }
 - (void)alphaFieldChanged  { [self applyAlpha:[self.alphaField.text doubleValue]]; }
+
+- (void)applyTextAlpha:(CGFloat)pct
+{
+    pct = MIN(100, MAX(5, pct));
+    self.textAlphaSlider.value = pct;
+    self.textAlphaField.text = [NSString stringWithFormat:@"%d", (int)lround(pct)];
+    [[NSUserDefaults standardUserDefaults] setDouble:pct / 100.0 forKey:kTextAlphaKey];
+    [[NSNotificationCenter defaultCenter] postNotificationName:ADXSettingsChangedNotification object:nil];
+}
+
+- (void)textAlphaSliderChanged { [self applyTextAlpha:self.textAlphaSlider.value]; }
+- (void)textAlphaFieldChanged  { [self applyTextAlpha:[self.textAlphaField.text doubleValue]]; }
+
+- (void)toggleScores:(UISwitch *)sw
+{
+    [[NSUserDefaults standardUserDefaults] setBool:sw.isOn forKey:kShowScoresKey];
+    [[NSNotificationCenter defaultCenter] postNotificationName:ADXSettingsChangedNotification object:nil];
+}
+
+- (void)toggleB50:(UISwitch *)sw
+{
+    [[NSUserDefaults standardUserDefaults] setBool:sw.isOn forKey:kShowB50Key];
+    [[NSNotificationCenter defaultCenter] postNotificationName:ADXSettingsChangedNotification object:nil];
+}
 
 - (void)applySize:(CGFloat)v
 {
