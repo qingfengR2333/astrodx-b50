@@ -2,6 +2,7 @@
 #import <UIKit/UIKit.h>
 #import "B50Core.h"
 #import "ImportPanel.h"
+#import "B50Image.h"
 
 #pragma mark - 颜色
 
@@ -30,17 +31,61 @@ static UIColor *ADXDiffColor(int d)
 - (instancetype)init
 {
     self = [super initWithStyle:UITableViewStyleInsetGrouped];
-    if (self) self.title = @"B50 v4";
+    if (self) self.title = @"B50成绩图";
     return self;
 }
 
 - (void)viewDidLoad
 {
     [super viewDidLoad];
-    self.navigationItem.rightBarButtonItem =
+    UIBarButtonItem *reloadItem =
         [[UIBarButtonItem alloc] initWithTitle:@"重新读取" style:UIBarButtonItemStylePlain
                                         target:self action:@selector(reloadData)];
+    UIBarButtonItem *exportItem =
+        [[UIBarButtonItem alloc] initWithTitle:@"导出图" style:UIBarButtonItemStyleDone
+                                        target:self action:@selector(exportImage)];
+    // 数组第一个在最右边
+    self.navigationItem.rightBarButtonItems = @[exportItem, reloadItem];
     [self reloadData];
+}
+
+- (void)exportImage
+{
+    if (!self.result) return;
+
+    NSString *oldTitle = self.title;
+    self.title = @"B50成绩图 · 生成中…";
+    for (UIBarButtonItem *b in self.navigationItem.rightBarButtonItems) b.enabled = NO;
+
+    NSString *docs = [NSHomeDirectory() stringByAppendingPathComponent:@"Documents"];
+    NSString *png = [docs stringByAppendingPathComponent:@"astrodx_b50.png"];
+
+    __weak __typeof(self) weakSelf = self;
+    [ADXImage render:self.result
+            coverDir:[docs stringByAppendingPathComponent:@"covers"]
+              toPath:png
+          completion:^(UIImage *image, NSError *error) {
+        __typeof(weakSelf) me = weakSelf;
+        if (!me) return;
+        me.title = oldTitle;
+        for (UIBarButtonItem *b in me.navigationItem.rightBarButtonItems) b.enabled = YES;
+
+        if (!image) {
+            UIAlertController *a = [UIAlertController alertControllerWithTitle:@"导出失败"
+                                                                      message:error.localizedDescription
+                                                               preferredStyle:UIAlertControllerStyleAlert];
+            [a addAction:[UIAlertAction actionWithTitle:@"好" style:UIAlertActionStyleDefault handler:nil]];
+            [me presentViewController:a animated:YES completion:nil];
+            return;
+        }
+
+        UIActivityViewController *av =
+            [[UIActivityViewController alloc] initWithActivityItems:@[image] applicationActivities:nil];
+        av.popoverPresentationController.sourceView = me.view;
+        av.popoverPresentationController.sourceRect =
+            CGRectMake(CGRectGetMidX(me.view.bounds), 44, 1, 1);
+        [me presentViewController:av animated:YES completion:nil];
+    }];
 }
 
 - (void)reloadData
@@ -49,7 +94,7 @@ static UIColor *ADXDiffColor(int d)
     self.errorText = nil;
     self.result = nil;
     [self.tableView reloadData];
-    self.title = @"B50 v4 · 读取中…";
+    self.title = @"B50成绩图 · 读取中…";
 
     NSString *docs = [NSHomeDirectory() stringByAppendingPathComponent:@"Documents"];
     NSString *cachePath = [docs stringByAppendingPathComponent:@"cache"];
@@ -66,10 +111,10 @@ static UIColor *ADXDiffColor(int d)
             self.loading = NO;
             if (err) {
                 self.errorText = err.localizedDescription;
-                self.title = @"B50 v4 · 失败";
+                self.title = @"B50成绩图 · 失败";
             } else {
                 self.result = res;
-                self.title = [NSString stringWithFormat:@"B50 v4 · %d", res.total];
+                self.title = [NSString stringWithFormat:@"B50成绩图 · %d", res.total];
             }
             [self.tableView reloadData];
         });

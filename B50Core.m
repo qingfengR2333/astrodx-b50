@@ -174,6 +174,7 @@ static NSData *ADXSyncGet(NSString *url, NSError **error)
     int maxVer = 0;
 
     for (NSDictionary *song in songs) {
+        int sid = [song[@"id"] intValue];
         NSString *title = song[@"title"];
         NSDictionary *diffs = song[@"difficulties"];
         if (![title isKindOfClass:[NSString class]] || ![diffs isKindOfClass:[NSDictionary class]]) continue;
@@ -187,7 +188,7 @@ static NSData *ADXSyncGet(NSString *url, NSError **error)
                 int ver = [c[@"version"] intValue];
                 if (ver > maxVer) maxVer = ver;
                 NSString *key = [NSString stringWithFormat:@"%@|%@|%d", ADXNorm(title), type, idx];
-                map[key] = @{@"ds": @(ds), @"level": c[@"level"] ?: @"", @"ver": @(ver)};
+                map[key] = @{@"ds": @(ds), @"level": c[@"level"] ?: @"", @"ver": @(ver), @"id": @(sid)};
             }
         }
     }
@@ -248,6 +249,7 @@ static NSData *ADXSyncGet(NSString *url, NSError **error)
             e.rate = rate;
             e.diffId = diffId;
             e.rating = (int)floor(e.ds * ADXCoef(rate) + 1e-9);
+            e.songId = [hit[@"id"] intValue];
             [all addObject:e];
         }
     }

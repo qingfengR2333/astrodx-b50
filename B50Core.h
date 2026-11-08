@@ -8,6 +8,7 @@
 @property (nonatomic, assign) double rate;
 @property (nonatomic, assign) int diffId;
 @property (nonatomic, assign) int rating;
+@property (nonatomic, assign) int songId;   // 官方曲目 ID，用来取曲绘
 @property (nonatomic, assign) int rank;
 @end
 

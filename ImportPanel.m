@@ -33,8 +33,10 @@
                  @"导入完回到游戏，重开 App 或刷新曲库即可看到。";
     [stack addArrangedSubview:hint];
 
-    [stack addArrangedSubview:[self makeButton:@"导入谱面（.zip，可多选）" action:@selector(pickLevels) color:[UIColor systemBlueColor]]];
-    [stack addArrangedSubview:[self makeButton:@"导入皮肤（.zip，可多选）" action:@selector(pickSkins) color:[UIColor systemPinkColor]]];
+    // 钢蓝 #4682B4 提亮 40% ≈ #91B1D0
+    UIColor *steel = [UIColor colorWithRed:0x91/255.0 green:0xB1/255.0 blue:0xD0/255.0 alpha:1.0];
+    [stack addArrangedSubview:[self makeButton:@"导入谱面（.zip，可多选）" action:@selector(pickLevels) color:steel]];
+    [stack addArrangedSubview:[self makeButton:@"导入皮肤（.zip，可多选）" action:@selector(pickSkins) color:steel]];
 
     self.spinner = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
     self.spinner.hidesWhenStopped = YES;
@@ -61,7 +63,8 @@
 {
     UIButton *b = [UIButton buttonWithType:UIButtonTypeSystem];
     [b setTitle:title forState:UIControlStateNormal];
-    [b setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
+    [b setTitleColor:[UIColor colorWithRed:0x20/255.0 green:0x36/255.0 blue:0x4F/255.0 alpha:1.0]
+             forState:UIControlStateNormal];
     b.titleLabel.font = [UIFont boldSystemFontOfSize:16];
     b.backgroundColor = color;
     b.layer.cornerRadius = 10;
