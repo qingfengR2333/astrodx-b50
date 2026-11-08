@@ -5,7 +5,7 @@ export ARCHS = arm64
 export DEBUG = 0
 
 TWEAK_NAME = AstroDXB50
-AstroDXB50_FILES = Tweak.x B50Core.m
+AstroDXB50_FILES = Tweak.x B50Core.m Zip.m ImportPanel.m
 AstroDXB50_CFLAGS = -fobjc-arc
 AstroDXB50_FRAMEWORKS = UIKit Foundation
 AstroDXB50_LDFLAGS = -lz

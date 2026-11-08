@@ -1,6 +1,7 @@
 // Tweak.x — AstroDX B50 悬浮窗（注入后用，无 hook，纯挂一个浮窗）
 #import <UIKit/UIKit.h>
 #import "B50Core.h"
+#import "ImportPanel.h"
 
 #pragma mark - 颜色
 
@@ -29,7 +30,7 @@ static UIColor *ADXDiffColor(int d)
 - (instancetype)init
 {
     self = [super initWithStyle:UITableViewStyleInsetGrouped];
-    if (self) self.title = @"B50 v3";
+    if (self) self.title = @"B50 v4";
     return self;
 }
 
@@ -48,7 +49,7 @@ static UIColor *ADXDiffColor(int d)
     self.errorText = nil;
     self.result = nil;
     [self.tableView reloadData];
-    self.title = @"B50 v3 · 读取中…";
+    self.title = @"B50 v4 · 读取中…";
 
     NSString *docs = [NSHomeDirectory() stringByAppendingPathComponent:@"Documents"];
     NSString *cachePath = [docs stringByAppendingPathComponent:@"cache"];
@@ -65,10 +66,10 @@ static UIColor *ADXDiffColor(int d)
             self.loading = NO;
             if (err) {
                 self.errorText = err.localizedDescription;
-                self.title = @"B50 v3 · 失败";
+                self.title = @"B50 v4 · 失败";
             } else {
                 self.result = res;
-                self.title = [NSString stringWithFormat:@"B50 v3 · %d", res.total];
+                self.title = [NSString stringWithFormat:@"B50 v4 · %d", res.total];
             }
             [self.tableView reloadData];
         });
@@ -140,7 +141,7 @@ static UIColor *ADXDiffColor(int d)
 
 static UIWindow *gWindow;
 static UIWindow *gPanelWindow;
-static UIButton *gButton;
+static UIView *gBall;
 static CGSize gScreenSize;
 
 + (UIWindowScene *)activeScene
@@ -194,21 +195,33 @@ static CGSize gScreenSize;
     gWindow.rootViewController.view.backgroundColor = [UIColor clearColor];
     gWindow.hidden = NO;
 
-    gButton = [UIButton buttonWithType:UIButtonTypeCustom];
-    gButton.frame = CGRectMake(0, 0, side, side);
-    gButton.layer.cornerRadius = side / 2;
-    gButton.layer.masksToBounds = NO;
-    gButton.backgroundColor = [UIColor colorWithRed:0.26 green:0.52 blue:0.97 alpha:0.92];
-    gButton.layer.shadowColor = [UIColor blackColor].CGColor;
-    gButton.layer.shadowOpacity = 0.25;
-    gButton.layer.shadowRadius = 6;
-    gButton.layer.shadowOffset = CGSizeMake(0, 2);
-    [gButton setTitle:@"B50" forState:UIControlStateNormal];
-    gButton.titleLabel.font = [UIFont boldSystemFontOfSize:16];
-    [gButton setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
-    [gButton addTarget:self action:@selector(openPanel) forControlEvents:UIControlEventTouchUpInside];
-    [gButton addGestureRecognizer:[[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(pan:)]];
-    [gWindow.rootViewController.view addSubview:gButton];
+    UIView *ball = [[UIView alloc] initWithFrame:CGRectMake(0, 0, side, side)];
+    ball.backgroundColor = [UIColor colorWithRed:0.26 green:0.52 blue:0.97 alpha:0.92];
+    ball.layer.cornerRadius = side / 2;
+    ball.layer.masksToBounds = NO;
+    ball.layer.shadowColor = [UIColor blackColor].CGColor;
+    ball.layer.shadowOpacity = 0.25;
+    ball.layer.shadowRadius = 6;
+    ball.layer.shadowOffset = CGSizeMake(0, 2);
+    ball.userInteractionEnabled = YES;
+
+    UILabel *ballLabel = [[UILabel alloc] initWithFrame:ball.bounds];
+    ballLabel.text = @"ADX";
+    ballLabel.textColor = [UIColor whiteColor];
+    ballLabel.font = [UIFont boldSystemFontOfSize:15];
+    ballLabel.textAlignment = NSTextAlignmentCenter;
+    ballLabel.userInteractionEnabled = NO;
+    [ball addSubview:ballLabel];
+
+    // 双击才打开，避免游玩时误触
+    UITapGestureRecognizer *doubleTap =
+        [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(openPanel)];
+    doubleTap.numberOfTapsRequired = 2;
+    [ball addGestureRecognizer:doubleTap];
+    [ball addGestureRecognizer:[[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(pan:)]];
+
+    gBall = ball;
+    [gWindow.rootViewController.view addSubview:ball];
 }
 
 /// 拖动的是整个窗口（不是球），所以球的点击区域始终跟着走
@@ -247,12 +260,27 @@ static CGSize gScreenSize;
     gPanelWindow.layer.cornerRadius = 16;
     gPanelWindow.layer.masksToBounds = YES;
 
-    ADXB50Panel *panel = [ADXB50Panel new];
-    UINavigationController *nav = [[UINavigationController alloc] initWithRootViewController:panel];
-    panel.navigationItem.leftBarButtonItem =
+    ADXB50Panel *b50 = [ADXB50Panel new];
+    UINavigationController *navB50 = [[UINavigationController alloc] initWithRootViewController:b50];
+    navB50.tabBarItem = [[UITabBarItem alloc] initWithTitle:@"B50"
+                                                      image:[UIImage systemImageNamed:@"chart.bar.fill"]
+                                                        tag:0];
+    b50.navigationItem.leftBarButtonItem =
         [[UIBarButtonItem alloc] initWithTitle:@"关闭" style:UIBarButtonItemStyleDone
                                         target:self action:@selector(closePanel)];
-    gPanelWindow.rootViewController = nav;
+
+    ADXImportPanel *imp = [ADXImportPanel new];
+    UINavigationController *navImp = [[UINavigationController alloc] initWithRootViewController:imp];
+    navImp.tabBarItem = [[UITabBarItem alloc] initWithTitle:@"导入"
+                                                      image:[UIImage systemImageNamed:@"square.and.arrow.down"]
+                                                        tag:1];
+    imp.navigationItem.leftBarButtonItem =
+        [[UIBarButtonItem alloc] initWithTitle:@"关闭" style:UIBarButtonItemStyleDone
+                                        target:self action:@selector(closePanel)];
+
+    UITabBarController *tabs = [UITabBarController new];
+    tabs.viewControllers = @[navB50, navImp];
+    gPanelWindow.rootViewController = tabs;
     gPanelWindow.hidden = NO;
 }
 
