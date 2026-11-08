@@ -10,12 +10,48 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # 先自检：文件没传全会在这里 5 秒内报错，不用等 Theos 装完
+      - name: 自检（检查工程文件是否齐全）
+        run: |
+          echo "仓库根目录内容："
+          ls -la
+          missing=0
+          for f in Makefile Tweak.x B50Core.m B50Core.h control; do
+            if [ -f "$f" ]; then
+              echo "  ✓ $f"
+            else
+              echo "::error::缺少 $f —— 工程文件没有全部上传到仓库根目录"
+              missing=1
+            fi
+          done
+          if [ ! -f .github/workflows/build.yml ]; then
+            echo "::warning::workflow 文件路径异常"
+          fi
+          exit $missing
+
       - name: 安装 Theos
         run: |
           brew install ldid xz || true
-          git clone --recursive --depth 1 https://github.com/theos/theos.git "$HOME/theos"
+          ok=0
+          for i in 1 2 3; do
+            rm -rf "$HOME/theos"
+            # 先试浅克隆（快），失败再退回完整克隆（慢但更稳）
+            if git clone --recursive --depth 1 https://github.com/theos/theos.git "$HOME/theos"; then
+              ok=1; break
+            fi
+            echo "浅克隆失败（第 ${i}/3 次），改用完整克隆…"
+            rm -rf "$HOME/theos"
+            if git clone --recursive https://github.com/theos/theos.git "$HOME/theos"; then
+              ok=1; break
+            fi
+            echo "第 ${i}/3 次克隆仍失败，5 秒后重试…"
+            sleep 5
+          done
+          if [ "$ok" != "1" ]; then
+            echo "::error::Theos 克隆失败（网络问题），请重跑一次"
+            exit 1
+          fi
           echo "THEOS=$HOME/theos" >> "$GITHUB_ENV"
-          echo "Theos 就绪：$HOME/theos"
 
       - name: 编译
         run: |
@@ -30,7 +66,17 @@ jobs:
             echo "::error::没有生成 dylib，请回看上面 make 的输出"
             exit 1
           fi
-          for f in out/*.dylib; do echo "产物：$f"; file "$f"; done
+          # 强行只留 arm64 单架构：TrollFools 的 ldid 处理不了 fat 包
+          for f in out/*.dylib; do
+            lipo -thin arm64 "$f" -output "$f.thin" 2>/dev/null && mv "$f.thin" "$f" || true
+          done
+          for f in out/*.dylib; do
+            echo "产物：$f"
+            file "$f"
+            lipo -info "$f" || true
+            otool -hv "$f" | head -5 || true
+            ls -l "$f"
+          done
 
       - uses: actions/upload-artifact@v4
         with:
