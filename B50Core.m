@@ -21,83 +21,6 @@ static NSString *CsvCell(NSString *v)
     return v;
 }
 
-+ (NSString *)scoresCsv:(NSDictionary *)cache playedOnly:(BOOL)only
-{
-    NSMutableString *s = [NSMutableString stringWithString:
-        @"level_key,path,title,artist,difficulty_id,difficulty,charter,"
-        @"achievementRate,clearType,dxScore,maxCombo,clearedPlays,completePlays,"
-        @"criticalCount,perfectCount,greatCount,goodCount,totalNotesCount\r\n"];
-
-    NSDictionary *levels = cache[@"level_metadata"];
-    if (![levels isKindOfClass:[NSDictionary class]]) return s;
-
-    for (NSString *key in levels) {
-        NSDictionary *lv = levels[key];
-        NSArray *diffs = lv[@"difficulties"];
-        if (![diffs isKindOfClass:[NSArray class]]) continue;
-
-        for (NSDictionary *d in diffs) {
-            NSDictionary *st = d[@"stats"];
-            if (![st isKindOfClass:[NSDictionary class]]) st = @{};
-
-            double rate = [st[@"achievementRate"] doubleValue];
-            int dxScore = [st[@"dxScore"] intValue];
-            int plays = [st[@"clearedPlays"] intValue];
-            if (only && rate <= 0 && dxScore <= 0 && plays <= 0) continue;
-
-            NSMutableArray *f = [NSMutableArray array];
-            [f addObject:CsvCell(key)];
-            [f addObject:CsvCell(lv[@"path"])];
-            [f addObject:CsvCell(lv[@"title"])];
-            [f addObject:CsvCell(lv[@"artist"])];
-            [f addObject:[NSString stringWithFormat:@"%d", [d[@"id"] intValue]]];
-            [f addObject:CsvCell(d[@"value"])];
-            [f addObject:CsvCell(d[@"charter"])];
-            [f addObject:[NSString stringWithFormat:@"%.9g", rate]];
-            [f addObject:[NSString stringWithFormat:@"%d", [st[@"clearType"] intValue]]];
-            [f addObject:[NSString stringWithFormat:@"%d", dxScore]];
-            [f addObject:[NSString stringWithFormat:@"%d", [st[@"maxCombo"] intValue]]];
-            [f addObject:[NSString stringWithFormat:@"%d", plays]];
-            [f addObject:[NSString stringWithFormat:@"%d", [st[@"completePlays"] intValue]]];
-            [f addObject:[NSString stringWithFormat:@"%d", [st[@"criticalCount"] intValue]]];
-            [f addObject:[NSString stringWithFormat:@"%d", [st[@"perfectCount"] intValue]]];
-            [f addObject:[NSString stringWithFormat:@"%d", [st[@"greatCount"] intValue]]];
-            [f addObject:[NSString stringWithFormat:@"%d", [st[@"goodCount"] intValue]]];
-            [f addObject:[NSString stringWithFormat:@"%d", [st[@"totalNotesCount"] intValue]]];
-            [s appendString:[f componentsJoinedByString:@","]];
-            [s appendString:@"\r\n"];
-        }
-    }
-    return s;
-}
-
-+ (NSString *)b50Csv:(ADXB50Result *)result
-{
-    NSMutableString *s = [NSMutableString stringWithString:
-        @"section,rank,title,type,difficulty,level,ds,achievementRate,rating\r\n"];
-    if (!result) return s;
-
-    for (int pass = 0; pass < 2; pass++) {
-        NSArray *list = pass == 0 ? result.oldList : result.recentList;
-        NSString *section = pass == 0 ? @"old" : @"new";
-        for (ADXEntry *e in list) {
-            NSString *type = @"";
-            if ([e.title hasSuffix:@"]"]) {
-                NSRange r = [e.title rangeOfString:@"[" options:NSBackwardsSearch];
-                if (r.location != NSNotFound) {
-                    NSString *inner = [e.title substringFromIndex:r.location + 1];
-                    inner = [inner substringToIndex:inner.length - 1];
-                    if ([inner caseInsensitiveCompare:@"DX"] == NSOrderedSame) type = @"DX";
-                    else if ([inner caseInsensitiveCompare:@"SD"] == NSOrderedSame) type = @"SD";
-                }
-            }
-            [s appendFormat:@"%@,%d,%@,%@,%@,%@,%.1f,%.4f,%d\r\n",
-             section, e.rank, CsvCell(e.title), type, CsvCell(e.level), CsvCell(e.level),
-             e.ds, e.rate, e.rating];
-        }
-    }
-    return s;
-}
 
 @implementation ADXB50Result
 - (int)total { return self.oldSum + self.newSum; }
@@ -182,6 +105,84 @@ static NSData *ADXSyncGet(NSString *url, NSError **error)
 #pragma mark - 主体
 
 @implementation ADXB50
+
++ (NSString *)scoresCsv:(NSDictionary *)cache playedOnly:(BOOL)only
+{
+    NSMutableString *s = [NSMutableString stringWithString:
+        @"level_key,path,title,artist,difficulty_id,difficulty,charter,"
+        @"achievementRate,clearType,dxScore,maxCombo,clearedPlays,completePlays,"
+        @"criticalCount,perfectCount,greatCount,goodCount,totalNotesCount\r\n"];
+
+    NSDictionary *levels = cache[@"level_metadata"];
+    if (![levels isKindOfClass:[NSDictionary class]]) return s;
+
+    for (NSString *key in levels) {
+        NSDictionary *lv = levels[key];
+        NSArray *diffs = lv[@"difficulties"];
+        if (![diffs isKindOfClass:[NSArray class]]) continue;
+
+        for (NSDictionary *d in diffs) {
+            NSDictionary *st = d[@"stats"];
+            if (![st isKindOfClass:[NSDictionary class]]) st = @{};
+
+            double rate = [st[@"achievementRate"] doubleValue];
+            int dxScore = [st[@"dxScore"] intValue];
+            int plays = [st[@"clearedPlays"] intValue];
+            if (only && rate <= 0 && dxScore <= 0 && plays <= 0) continue;
+
+            NSMutableArray *f = [NSMutableArray array];
+            [f addObject:CsvCell(key)];
+            [f addObject:CsvCell(lv[@"path"])];
+            [f addObject:CsvCell(lv[@"title"])];
+            [f addObject:CsvCell(lv[@"artist"])];
+            [f addObject:[NSString stringWithFormat:@"%d", [d[@"id"] intValue]]];
+            [f addObject:CsvCell(d[@"value"])];
+            [f addObject:CsvCell(d[@"charter"])];
+            [f addObject:[NSString stringWithFormat:@"%.9g", rate]];
+            [f addObject:[NSString stringWithFormat:@"%d", [st[@"clearType"] intValue]]];
+            [f addObject:[NSString stringWithFormat:@"%d", dxScore]];
+            [f addObject:[NSString stringWithFormat:@"%d", [st[@"maxCombo"] intValue]]];
+            [f addObject:[NSString stringWithFormat:@"%d", plays]];
+            [f addObject:[NSString stringWithFormat:@"%d", [st[@"completePlays"] intValue]]];
+            [f addObject:[NSString stringWithFormat:@"%d", [st[@"criticalCount"] intValue]]];
+            [f addObject:[NSString stringWithFormat:@"%d", [st[@"perfectCount"] intValue]]];
+            [f addObject:[NSString stringWithFormat:@"%d", [st[@"greatCount"] intValue]]];
+            [f addObject:[NSString stringWithFormat:@"%d", [st[@"goodCount"] intValue]]];
+            [f addObject:[NSString stringWithFormat:@"%d", [st[@"totalNotesCount"] intValue]]];
+            [s appendString:[f componentsJoinedByString:@","]];
+            [s appendString:@"\r\n"];
+        }
+    }
+    return s;
+}
+
++ (NSString *)b50Csv:(ADXB50Result *)result
+{
+    NSMutableString *s = [NSMutableString stringWithString:
+        @"section,rank,title,type,difficulty,level,ds,achievementRate,rating\r\n"];
+    if (!result) return s;
+
+    for (int pass = 0; pass < 2; pass++) {
+        NSArray *list = pass == 0 ? result.oldList : result.recentList;
+        NSString *section = pass == 0 ? @"old" : @"new";
+        for (ADXEntry *e in list) {
+            NSString *type = @"";
+            if ([e.title hasSuffix:@"]"]) {
+                NSRange r = [e.title rangeOfString:@"[" options:NSBackwardsSearch];
+                if (r.location != NSNotFound) {
+                    NSString *inner = [e.title substringFromIndex:r.location + 1];
+                    inner = [inner substringToIndex:inner.length - 1];
+                    if ([inner caseInsensitiveCompare:@"DX"] == NSOrderedSame) type = @"DX";
+                    else if ([inner caseInsensitiveCompare:@"SD"] == NSOrderedSame) type = @"SD";
+                }
+            }
+            [s appendFormat:@"%@,%d,%@,%@,%@,%@,%.1f,%.4f,%d\r\n",
+             section, e.rank, CsvCell(e.title), type, CsvCell(e.level), CsvCell(e.level),
+             e.ds, e.rate, e.rating];
+        }
+    }
+    return s;
+}
 
 + (NSData *)inflateRaw:(NSData *)data
 {
