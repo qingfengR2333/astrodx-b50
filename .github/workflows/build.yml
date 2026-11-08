@@ -61,7 +61,10 @@ jobs:
       - name: 收集产物
         run: |
           mkdir -p out
-          find .theos -name "*.dylib" -exec cp {} out/ \;
+          # 关键：.theos 里还有 .dSYM/Contents/Resources/DWARF/AstroDXB50.dylib
+          # 那是调试符号（MH_DSYM），不是 dylib 本体，必须排除，否则会覆盖真文件
+          find .theos -type f -name "*.dylib" ! -path "*.dSYM*" -exec cp {} out/ \;
+          echo "收集到的文件："; ls -l out || true
           if [ -z "$(ls -A out)" ]; then
             echo "::error::没有生成 dylib，请回看上面 make 的输出"
             exit 1
@@ -71,6 +74,11 @@ jobs:
             lipo -thin arm64 "$f" -output "$f.thin" 2>/dev/null && mv "$f.thin" "$f" || true
           done
           for f in out/*.dylib; do
+            if ! otool -hv "$f" | grep -q DYLIB; then
+              echo "::error::$f 不是 MH_DYLIB 本体（可能又抓到 dSYM 了）"
+              otool -hv "$f"
+              exit 1
+            fi
             echo "产物：$f"
             file "$f"
             lipo -info "$f" || true
