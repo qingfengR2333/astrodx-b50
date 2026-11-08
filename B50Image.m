@@ -137,39 +137,39 @@ static void FillRound(CGRect r, CGFloat radius, UIColor *fill, UIColor *stroke, 
         FillRound(CGRectMake(kMargin, kMargin + 22, 8, kHeaderH - 44), 4, RGB(126, 96, 208), nil, 0);
 
         NSMutableParagraphStyle *psLeft = [NSMutableParagraphStyle new];
-        [[NSString stringWithFormat:@"BEST 50"] drawInRect:CGRectMake(kMargin + 26, kMargin + 18, 520, 46)
-            withAttributes:@{NSFontAttributeName: [UIFont boldSystemFontOfSize:30],
+        [[NSString stringWithFormat:@"BEST 50"] drawInRect:CGRectMake(kMargin + 26, kMargin + 14, 560, 52)
+            withAttributes:@{NSFontAttributeName: [UIFont boldSystemFontOfSize:40.0],
                              NSForegroundColorAttributeName: RGB(58, 46, 92),
                              NSParagraphStyleAttributeName: psLeft}];
 
         NSDateFormatter *df = [NSDateFormatter new];
         df.dateFormat = @"yyyy-MM-dd HH:mm";
         NSString *sub = [NSString stringWithFormat:@"AstroDX 成绩估算 · %@", [df stringFromDate:[NSDate date]]];
-        [sub drawInRect:CGRectMake(kMargin + 30, kMargin + 88, 600, 20)
-            withAttributes:@{NSFontAttributeName: [UIFont systemFontOfSize:9],
+        [sub drawInRect:CGRectMake(kMargin + 30, kMargin + 86, 620, 22)
+            withAttributes:@{NSFontAttributeName: [UIFont systemFontOfSize:12.0],
                              NSForegroundColorAttributeName: RGB(130, 120, 160)}];
 
         // 右侧 Rating
         NSMutableParagraphStyle *psRight = [NSMutableParagraphStyle new];
         psRight.alignment = NSTextAlignmentRight;
         NSString *total = [NSString stringWithFormat:@"%d", r.total];
-        UIFont *bigFont = [UIFont boldSystemFontOfSize:34];
+        UIFont *bigFont = [UIFont boldSystemFontOfSize:45.3];
         CGSize bigSize = [total sizeWithAttributes:@{NSFontAttributeName: bigFont}];
         CGFloat rx = kPageW - kMargin - 26;
-        [total drawInRect:CGRectMake(rx - bigSize.width, kMargin + 10, bigSize.width + 2, 48)
+        [total drawInRect:CGRectMake(rx - bigSize.width, kMargin + 8, bigSize.width + 4, 58)
             withAttributes:@{NSFontAttributeName: bigFont,
                              NSForegroundColorAttributeName: RGB(226, 74, 125)}];
         NSString *ratingWord = @"RATING";
-        CGSize rwSize = [ratingWord sizeWithAttributes:@{NSFontAttributeName: [UIFont boldSystemFontOfSize:11]}];
-        [ratingWord drawInRect:CGRectMake(rx - bigSize.width - rwSize.width - 16, kMargin + 30, rwSize.width + 2, 20)
-            withAttributes:@{NSFontAttributeName: [UIFont boldSystemFontOfSize:11],
+        CGSize rwSize = [ratingWord sizeWithAttributes:@{NSFontAttributeName: [UIFont boldSystemFontOfSize:14.7]}];
+        [ratingWord drawInRect:CGRectMake(rx - bigSize.width - rwSize.width - 16, kMargin + 28, rwSize.width + 4, 24)
+            withAttributes:@{NSFontAttributeName: [UIFont boldSystemFontOfSize:14.7],
                              NSForegroundColorAttributeName: RGB(150, 132, 190)}];
 
         NSString *eq = [NSString stringWithFormat:@"= 旧曲 %lu 首 %d  +  新曲 %lu 首 %d",
                         (unsigned long)r.oldList.count, r.oldSum,
                         (unsigned long)r.recentList.count, r.newSum];
         [eq drawInRect:CGRectMake(kMargin, kMargin + 96, kPageW - 2 * kMargin - 26, 20)
-            withAttributes:@{NSFontAttributeName: [UIFont systemFontOfSize:9],
+            withAttributes:@{NSFontAttributeName: [UIFont systemFontOfSize:12.0],
                              NSForegroundColorAttributeName: RGB(120, 110, 150),
                              NSParagraphStyleAttributeName: psRight}];
 
@@ -185,11 +185,11 @@ static void FillRound(CGRect r, CGFloat radius, UIColor *fill, UIColor *stroke, 
         CGFloat fy = pageH - kMargin - kFooterH + 8;
         NSString *left = [NSString stringWithFormat:@"由 AstroDX B50 生成 · 定数来自 lxns 曲库 · 当前版本 %d", r.current];
         [left drawInRect:CGRectMake(kMargin, fy, 900, 18)
-            withAttributes:@{NSFontAttributeName: [UIFont systemFontOfSize:8],
+            withAttributes:@{NSFontAttributeName: [UIFont systemFontOfSize:10.7],
                              NSForegroundColorAttributeName: RGB(130, 122, 158)}];
         NSString *right = [NSString stringWithFormat:@"未识别 %d 首不参与计算（自制谱 / 宴会场）", r.unmatched];
         [right drawInRect:CGRectMake(kPageW - kMargin - 620, fy, 620, 18)
-            withAttributes:@{NSFontAttributeName: [UIFont systemFontOfSize:8],
+            withAttributes:@{NSFontAttributeName: [UIFont systemFontOfSize:10.7],
                              NSForegroundColorAttributeName: RGB(130, 122, 158),
                              NSParagraphStyleAttributeName: psRight}];
     }];
@@ -203,7 +203,7 @@ static void FillRound(CGRect r, CGFloat radius, UIColor *fill, UIColor *stroke, 
     FillRound(bar, 14, idx == 1 ? RGB(0x43, 0x85, 0xF7) : RGB(0xEB, 0x49, 0x99), nil, 0);
 
     NSString *title = [NSString stringWithFormat:@"0%d.  %@", idx, name];
-    UIFont *tf = [UIFont boldSystemFontOfSize:14];
+    UIFont *tf = [UIFont boldSystemFontOfSize:18.7];
     CGFloat th = [title sizeWithAttributes:@{NSFontAttributeName: tf}].height;
     [title drawInRect:CGRectMake(kMargin + 16, y + (36 - th) / 2, 400, th + 2)
         withAttributes:@{NSFontAttributeName: tf, NSForegroundColorAttributeName: [UIColor whiteColor]}];
@@ -211,7 +211,7 @@ static void FillRound(CGRect r, CGFloat radius, UIColor *fill, UIColor *stroke, 
     NSString *rightText = list.count
         ? [NSString stringWithFormat:@"%@ · 合计 %d · 平均 %d", caption, sum, sum / (int)list.count]
         : [NSString stringWithFormat:@"%@ · 没有可计入的谱面", caption];
-    UIFont *rf = [UIFont systemFontOfSize:9];
+    UIFont *rf = [UIFont systemFontOfSize:12.0];
     CGFloat rh = [rightText sizeWithAttributes:@{NSFontAttributeName: rf}].height;
     NSMutableParagraphStyle *psR = [NSMutableParagraphStyle new];
     psR.alignment = NSTextAlignmentRight;
@@ -241,9 +241,13 @@ static void FillRound(CGRect r, CGFloat radius, UIColor *fill, UIColor *stroke, 
     UIColor *base = DiffColor(e.diffId);
     BOOL light = IsLightCard(e.diffId);
 
+    CGContextRef cg = UIGraphicsGetCurrentContext();
+    // 必须保存/恢复图形状态：addClip 会一直生效，不恢复的话
+    // 后面所有卡片、分段条、页脚都会被裁到第一张卡的范围里
+    CGContextSaveGState(cg);
+
     UIBezierPath *path = [UIBezierPath bezierPathWithRoundedRect:card cornerRadius:10];
     [path addClip];
-    CGContextRef cg = UIGraphicsGetCurrentContext();
 
     // 渐变底
     CGColorSpaceRef space = CGColorSpaceCreateDeviceRGB();
@@ -282,7 +286,7 @@ static void FillRound(CGRect r, CGFloat radius, UIColor *fill, UIColor *stroke, 
         [RGB(52, 42, 80) setFill];
         UIRectFill(coverRect);
         NSString *ch = e.title.length ? [e.title substringToIndex:1] : @"?";
-        UIFont *cf = [UIFont boldSystemFontOfSize:24];
+        UIFont *cf = [UIFont boldSystemFontOfSize:32.0];
         CGSize cs = [ch sizeWithAttributes:@{NSFontAttributeName: cf}];
         [ch drawAtPoint:CGPointMake(CGRectGetMidX(coverRect) - cs.width / 2,
                                     CGRectGetMidY(coverRect) - cs.height / 2)
@@ -295,12 +299,12 @@ static void FillRound(CGRect r, CGFloat radius, UIColor *fill, UIColor *stroke, 
     FillRound(CGRectMake(card.origin.x + 8, card.origin.y + 59, 32, 15), 4,
               [UIColor colorWithWhite:0 alpha:0.66], nil, 0);
     [[NSString stringWithFormat:@"#%d", e.rank] drawAtPoint:CGPointMake(card.origin.x + 10, card.origin.y + 59.5)
-        withAttributes:@{NSFontAttributeName: [UIFont boldSystemFontOfSize:7.5],
+        withAttributes:@{NSFontAttributeName: [UIFont boldSystemFontOfSize:10.0],
                          NSForegroundColorAttributeName: [UIColor whiteColor]}];
 
     // 曲名
     CGFloat tw = kCardW - 88;
-    UIFont *titleFont = [UIFont boldSystemFontOfSize:8.5];
+    UIFont *titleFont = [UIFont boldSystemFontOfSize:11.3];
     NSMutableParagraphStyle *ps = [NSMutableParagraphStyle new];
     ps.lineBreakMode = NSLineBreakByTruncatingTail;
     NSDictionary *titleAttr = @{NSFontAttributeName: titleFont,
@@ -310,7 +314,7 @@ static void FillRound(CGRect r, CGFloat radius, UIColor *fill, UIColor *stroke, 
                                         options:NSStringDrawingUsesLineFragmentOrigin
                                      attributes:titleAttr context:nil];
     if (tbox.size.height > titleFont.lineHeight * 2 + 1) {
-        titleFont = [UIFont boldSystemFontOfSize:7.2];
+        titleFont = [UIFont boldSystemFontOfSize:9.6];
         titleAttr = @{NSFontAttributeName: titleFont,
                       NSForegroundColorAttributeName: fg,
                       NSParagraphStyleAttributeName: ps};
@@ -320,7 +324,7 @@ static void FillRound(CGRect r, CGFloat radius, UIColor *fill, UIColor *stroke, 
 
     // 难度徽章 + 定数
     NSString *lvl = e.level.length ? e.level : @"?";
-    UIFont *bf = [UIFont boldSystemFontOfSize:7.5];
+    UIFont *bf = [UIFont boldSystemFontOfSize:10.0];
     CGFloat bw = MAX(26, [lvl sizeWithAttributes:@{NSFontAttributeName: bf}].width + 8);
     FillRound(CGRectMake(card.origin.x + 8, card.origin.y + 82, bw, 17), 5,
               [UIColor colorWithWhite:0 alpha:0.82], nil, 0);
@@ -329,29 +333,31 @@ static void FillRound(CGRect r, CGFloat radius, UIColor *fill, UIColor *stroke, 
 
     [[NSString stringWithFormat:@"%.1f", e.ds] drawAtPoint:CGPointMake(card.origin.x + 8 + bw + 6,
                                                                      card.origin.y + 84)
-        withAttributes:@{NSFontAttributeName: [UIFont systemFontOfSize:7],
+        withAttributes:@{NSFontAttributeName: [UIFont systemFontOfSize:9.3],
                          NSForegroundColorAttributeName: muted}];
 
     // 达成率
     [[NSString stringWithFormat:@"%.4f%%", e.rate] drawAtPoint:CGPointMake(card.origin.x + 8,
                                                                          card.origin.y + 101)
-        withAttributes:@{NSFontAttributeName: [UIFont boldSystemFontOfSize:10],
+        withAttributes:@{NSFontAttributeName: [UIFont boldSystemFontOfSize:13.3],
                          NSForegroundColorAttributeName: fg}];
 
     // 单曲 Rating
     NSString *ra = [NSString stringWithFormat:@"%d", e.rating];
-    UIFont *raf = [UIFont boldSystemFontOfSize:11.5];
+    UIFont *raf = [UIFont boldSystemFontOfSize:15.3];
     CGSize ras = [ra sizeWithAttributes:@{NSFontAttributeName: raf}];
     [ra drawAtPoint:CGPointMake(CGRectGetMaxX(card) - 8 - ras.width, card.origin.y + 98)
      withAttributes:@{NSFontAttributeName: raf,
                       NSForegroundColorAttributeName: light ? RGB(96, 56, 150) : [UIColor whiteColor]}];
+
+    CGContextRestoreGState(cg);
 }
 
 + (void)drawEmptyCard:(CGRect)card
 {
     FillRound(card, 10, RGB(238, 234, 248), RGB(222, 214, 240), 1.2);
     NSString *dash = @"—";
-    UIFont *f = [UIFont boldSystemFontOfSize:14];
+    UIFont *f = [UIFont boldSystemFontOfSize:18.7];
     CGSize s = [dash sizeWithAttributes:@{NSFontAttributeName: f}];
     [dash drawAtPoint:CGPointMake(CGRectGetMidX(card) - s.width / 2, CGRectGetMidY(card) - s.height / 2)
        withAttributes:@{NSFontAttributeName: f, NSForegroundColorAttributeName: RGB(190, 182, 210)}];
