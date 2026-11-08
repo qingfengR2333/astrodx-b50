@@ -6,8 +6,8 @@ export DEBUG = 0
 
 TWEAK_NAME = AstroDXB50
 AstroDXB50_FILES = Tweak.x B50Core.m Zip.m ImportPanel.m
-AstroDXB50_CFLAGS = -fobjc-arc
-AstroDXB50_FRAMEWORKS = UIKit Foundation
+AstroDXB50_CFLAGS = -fobjc-arc -Wno-deprecated-declarations
+AstroDXB50_FRAMEWORKS = UIKit Foundation UniformTypeIdentifiers
 AstroDXB50_LDFLAGS = -lz
 
 include $(THEOS)/makefiles/common.mk

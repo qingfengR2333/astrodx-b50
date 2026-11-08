@@ -1,6 +1,7 @@
 // ImportPanel.m
 #import "ImportPanel.h"
 #import "Zip.h"
+#import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 
 @interface ADXImportPanel ()
 @property (nonatomic, strong) UITextView *logView;
@@ -74,9 +75,12 @@
 
 - (void)pickWithKind:(NSString *)kind
 {
+    // 用 iOS 14+ 的新接口，旧的 initWithDocumentTypes:inMode: 在新 SDK 里已被标记废弃，
+    // 而构建链把废弃警告当成了错误
+    UTType *zipType = [UTType typeWithIdentifier:@"public.zip-archive"];
+    if (!zipType) zipType = [UTType typeWithFilenameExtension:@"zip"];
     UIDocumentPickerViewController *picker =
-        [[UIDocumentPickerViewController alloc] initWithDocumentTypes:@[@"public.zip-archive"]
-                                                               inMode:UIDocumentPickerModeImport];
+        [[UIDocumentPickerViewController alloc] initForOpeningContentTypes:@[zipType] asCopy:YES];
     picker.delegate = self;
     picker.allowsMultipleSelection = YES;
     picker.modalPresentationStyle = UIModalPresentationFormSheet;
