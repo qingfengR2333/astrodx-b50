@@ -293,7 +293,7 @@ static NSData *ADXSyncGet(NSString *url, NSError **error)
     }
 
     res.oldList = oldTop;
-    res.newList = newTop;
+    res.recentList = newTop;
     res.unmatched = unmatched;
     return res;
 }

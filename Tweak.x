@@ -84,7 +84,7 @@ static UIColor *ADXDiffColor(int d)
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section
 {
     if (!self.result) return 1;
-    return section == 0 ? self.result.oldList.count : self.result.newList.count;
+    return section == 0 ? self.result.oldList.count : self.result.recentList.count;
 }
 
 - (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section
@@ -115,7 +115,7 @@ static UIColor *ADXDiffColor(int d)
         return cell;
     }
 
-    NSArray *list = indexPath.section == 0 ? self.result.oldList : self.result.newList;
+    NSArray *list = indexPath.section == 0 ? self.result.oldList : self.result.recentList;
     ADXEntry *e = list[indexPath.row];
 
     cell.textLabel.text = [NSString stringWithFormat:@"%d.  %@", e.rank, e.title];

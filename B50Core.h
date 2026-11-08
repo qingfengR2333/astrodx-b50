@@ -13,7 +13,7 @@
 
 @interface ADXB50Result : NSObject
 @property (nonatomic, strong) NSArray *oldList;     // ADXEntry，旧曲前 35
-@property (nonatomic, strong) NSArray *newList;     // ADXEntry，新曲前 15
+@property (nonatomic, strong) NSArray *recentList;     // ADXEntry，新曲前 15
 @property (nonatomic, assign) int oldSum;
 @property (nonatomic, assign) int newSum;
 @property (nonatomic, assign) int unmatched;
