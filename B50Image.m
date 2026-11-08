@@ -131,6 +131,13 @@ static void FillRound(CGRect r, CGFloat radius, UIColor *fill, UIColor *stroke, 
         [RGB(243, 240, 251) setFill];
         CGContextFillRect(cg, CGRectMake(0, 0, kPageW, pageH));
 
+        // 右下角淡粉装饰圆（和 PC 版一致，压在「未识别」那行字下面）
+        UIBezierPath *blob =
+            [UIBezierPath bezierPathWithRoundedRect:CGRectMake(kPageW - 420, pageH - 190, 520, 300)
+                                       cornerRadius:140];
+        [[RGB(226, 74, 125) colorWithAlphaComponent:18.0 / 255.0] setFill];
+        [blob fill];
+
         // ---- 头部 ----
         CGRect header = CGRectMake(kMargin, kMargin, kPageW - 2 * kMargin, kHeaderH);
         FillRound(header, 18, [UIColor whiteColor], RGB(220, 212, 240), 1.4);
@@ -200,13 +207,13 @@ static void FillRound(CGRect r, CGFloat radius, UIColor *fill, UIColor *stroke, 
               coverDir:(NSString *)dir cols:(int)cols
 {
     CGRect bar = CGRectMake(kMargin, y, kPageW - 2 * kMargin, 36);
-    FillRound(bar, 14, idx == 1 ? RGB(0x43, 0x85, 0xF7) : RGB(0xEB, 0x49, 0x99), nil, 0);
+    FillRound(bar, 14, RGB(0xF9, 0xD2, 0xE4), nil, 0);   // 玫瑰粉
 
     NSString *title = [NSString stringWithFormat:@"0%d.  %@", idx, name];
     UIFont *tf = [UIFont boldSystemFontOfSize:18.7];
     CGFloat th = [title sizeWithAttributes:@{NSFontAttributeName: tf}].height;
     [title drawInRect:CGRectMake(kMargin + 16, y + (36 - th) / 2, 400, th + 2)
-        withAttributes:@{NSFontAttributeName: tf, NSForegroundColorAttributeName: [UIColor whiteColor]}];
+        withAttributes:@{NSFontAttributeName: tf, NSForegroundColorAttributeName: RGB(0x7A, 0x30, 0x50)}];
 
     NSString *rightText = list.count
         ? [NSString stringWithFormat:@"%@ · 合计 %d · 平均 %d", caption, sum, sum / (int)list.count]
@@ -217,10 +224,11 @@ static void FillRound(CGRect r, CGFloat radius, UIColor *fill, UIColor *stroke, 
     psR.alignment = NSTextAlignmentRight;
     [rightText drawInRect:CGRectMake(kMargin, y + (36 - rh) / 2, kPageW - 2 * kMargin - 16, rh + 2)
         withAttributes:@{NSFontAttributeName: rf,
-                         NSForegroundColorAttributeName: [UIColor colorWithWhite:1 alpha:0.94],
+                         NSForegroundColorAttributeName: RGB(0x8A, 0x44, 0x62),
                          NSParagraphStyleAttributeName: psR}];
 
-    int innerW = cols * kCardW + (cols - 1) * kGap;
+    // 起点固定按 7 列算，BEST 15 才会和 BEST 35 左边对齐（不会被居中）
+    int innerW = 7 * kCardW + 6 * kGap;
     CGFloat startX = kMargin + (kPageW - 2 * kMargin - innerW) / 2;
 
     for (int row = 0; row < rows; row++) {
