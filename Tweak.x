@@ -134,6 +134,32 @@ static UIColor *ADXDiffColor(int d)
 
 @end
 
+#pragma mark - 穿透视图
+
+/// 全屏透明容器：点在自己身上就返回 nil，让触摸穿透到下面的游戏；
+/// 点在子视图（悬浮球）上则正常交给子视图。
+@interface ADXOverlayView : UIView
+@end
+
+@implementation ADXOverlayView
+- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event
+{
+    UIView *hit = [super hitTest:point withEvent:event];
+    return (hit == self) ? nil : hit;
+}
+@end
+
+@interface ADXOverlayVC : UIViewController
+@end
+
+@implementation ADXOverlayVC
+- (void)loadView
+{
+    self.view = [[ADXOverlayView alloc] initWithFrame:[UIScreen mainScreen].bounds];
+    self.view.backgroundColor = [UIColor clearColor];
+}
+@end
+
 #pragma mark - 浮窗
 
 @interface ADXRuntime : NSObject
@@ -164,8 +190,7 @@ static UIButton *gButton;
 
     gWindow.windowLevel = UIWindowLevelAlert + 1;
     gWindow.backgroundColor = [UIColor clearColor];
-    gWindow.rootViewController = [UIViewController new];
-    gWindow.rootViewController.view.backgroundColor = [UIColor clearColor];
+    gWindow.rootViewController = [ADXOverlayVC new];      // 空白处不挡触摸
     gWindow.hidden = NO;
 
     gButton = [UIButton buttonWithType:UIButtonTypeCustom];
