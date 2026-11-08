@@ -12,6 +12,7 @@ static NSString *const kSizeKey    = @"adx.size";
 static NSString *const kTextAlphaKey = @"adx.textAlpha";
 static NSString *const kShowScoresKey = @"adx.showScores";
 static NSString *const kShowB50Key    = @"adx.showB50";
+static NSString *const kShowImageKey  = @"adx.showImage";
 
 static NSString *HexFromColor(UIColor *c)
 {
@@ -85,6 +86,12 @@ static UIColor *ColorFromHex(NSString *hex)
 {
     id v = [[self d] objectForKey:kShowB50Key];
     return v ? [[self d] boolForKey:kShowB50Key] : YES;
+}
+
++ (BOOL)showImageButton
+{
+    id v = [[self d] objectForKey:kShowImageKey];
+    return v ? [[self d] boolForKey:kShowImageKey] : YES;
 }
 
 @end
@@ -246,6 +253,9 @@ static UIColor *ColorFromHex(NSString *hex)
     [stack addArrangedSubview:[self switchRow:@"首页显示「导出 b50 表」按钮"
                                           on:[ADXSettings showB50Button]
                                       action:@selector(toggleB50:)]];
+    [stack addArrangedSubview:[self switchRow:@"首页显示「导出 b50 成绩图」按钮"
+                                          on:[ADXSettings showImageButton]
+                                      action:@selector(toggleImage:)]];
 
     UITapGestureRecognizer *tap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(endEditing)];
     tap.cancelsTouchesInView = NO;
@@ -407,8 +417,9 @@ static UIColor *ColorFromHex(NSString *hex)
     for (UIButton *b in self.swatches) {
         BOOL selected = [b.backgroundColor isEqual:current] ||
                         ([HexFromColor(b.backgroundColor) isEqualToString:HexFromColor(current)]);
-        b.layer.borderWidth = selected ? 3 : 1;
-        b.layer.borderColor = (selected ? [UIColor labelColor] : [UIColor colorWithWhite:0.85 alpha:1]).CGColor;
+        b.layer.borderWidth = selected ? 1.5 : 1;
+        b.layer.borderColor = (selected ? [UIColor systemGrayColor]
+                                        : [UIColor colorWithWhite:0.88 alpha:1]).CGColor;
     }
 }
 
@@ -445,6 +456,12 @@ static UIColor *ColorFromHex(NSString *hex)
 - (void)toggleB50:(UISwitch *)sw
 {
     [[NSUserDefaults standardUserDefaults] setBool:sw.isOn forKey:kShowB50Key];
+    [[NSNotificationCenter defaultCenter] postNotificationName:ADXSettingsChangedNotification object:nil];
+}
+
+- (void)toggleImage:(UISwitch *)sw
+{
+    [[NSUserDefaults standardUserDefaults] setBool:sw.isOn forKey:kShowImageKey];
     [[NSNotificationCenter defaultCenter] postNotificationName:ADXSettingsChangedNotification object:nil];
 }
 

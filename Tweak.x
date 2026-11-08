@@ -39,14 +39,7 @@ static UIColor *ADXDiffColor(int d)
 - (void)viewDidLoad
 {
     [super viewDidLoad];
-    UIBarButtonItem *reloadItem =
-        [[UIBarButtonItem alloc] initWithTitle:@"重新读取" style:UIBarButtonItemStylePlain
-                                        target:self action:@selector(reloadData)];
-    UIBarButtonItem *exportItem =
-        [[UIBarButtonItem alloc] initWithTitle:@"导出 b50 成绩图" style:UIBarButtonItemStylePlain
-                                        target:self action:@selector(exportImage)];
-    // 数组第一个在最右边
-    self.navigationItem.rightBarButtonItems = @[exportItem, reloadItem];
+    // 导航栏按钮由 ADXRuntime 的 rebuildB50Items 统一生成（受设置里的开关控制）
     [self reloadData];
 }
 
@@ -274,6 +267,18 @@ static UINavigationController *gB50Nav;
                                                          target:vc
                                                          action:@selector(exportB50Csv)]];
     vc.navigationItem.leftBarButtonItems = items;
+
+    NSMutableArray *right = [NSMutableArray array];
+    if ([ADXSettings showImageButton])
+        [right addObject:[[UIBarButtonItem alloc] initWithTitle:@"导出 b50 成绩图"
+                                                          style:UIBarButtonItemStylePlain
+                                                         target:vc
+                                                         action:@selector(exportImage)]];
+    [right addObject:[[UIBarButtonItem alloc] initWithTitle:@"重新读取"
+                                                      style:UIBarButtonItemStylePlain
+                                                     target:vc
+                                                     action:@selector(reloadData)]];
+    vc.navigationItem.rightBarButtonItems = right;
 }
 
 + (void)applySettings
