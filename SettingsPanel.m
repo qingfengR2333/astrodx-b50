@@ -73,7 +73,7 @@ static UIColor *ColorFromHex(NSString *hex)
 {
     id v = [[self d] objectForKey:kTextAlphaKey];
     CGFloat a = v ? [[self d] doubleForKey:kTextAlphaKey] : 1.0;
-    return MIN(1.0, MAX(0.05, a));
+    return MIN(1.0, MAX(0.0, a));
 }
 
 + (BOOL)showScoresButton
@@ -211,7 +211,7 @@ static UIColor *ColorFromHex(NSString *hex)
     [stack addArrangedSubview:[self sectionTitle:@"字体透明度"]];
     UIStackView *textAlphaRow = [self sliderRowForTextAlpha:@"%"];
     [stack addArrangedSubview:textAlphaRow];
-    self.textAlphaSlider.minimumValue = 5;
+    self.textAlphaSlider.minimumValue = 0;
     self.textAlphaSlider.maximumValue = 100;
     self.textAlphaSlider.value = [ADXSettings textAlpha] * 100;
     self.textAlphaField.text = [NSString stringWithFormat:@"%d", (int)lround([ADXSettings textAlpha] * 100)];
@@ -418,7 +418,7 @@ static UIColor *ColorFromHex(NSString *hex)
         BOOL selected = [b.backgroundColor isEqual:current] ||
                         ([HexFromColor(b.backgroundColor) isEqualToString:HexFromColor(current)]);
         b.layer.borderWidth = selected ? 1.5 : 1;
-        b.layer.borderColor = (selected ? [UIColor systemGrayColor]
+        b.layer.borderColor = (selected ? [UIColor blackColor]
                                         : [UIColor colorWithWhite:0.88 alpha:1]).CGColor;
     }
 }
@@ -437,7 +437,7 @@ static UIColor *ColorFromHex(NSString *hex)
 
 - (void)applyTextAlpha:(CGFloat)pct
 {
-    pct = MIN(100, MAX(5, pct));
+    pct = MIN(100, MAX(0, pct));
     self.textAlphaSlider.value = pct;
     self.textAlphaField.text = [NSString stringWithFormat:@"%d", (int)lround(pct)];
     [[NSUserDefaults standardUserDefaults] setDouble:pct / 100.0 forKey:kTextAlphaKey];
