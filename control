@@ -1,0 +1,9 @@
+Package: com.zephyr.astrodxb50
+Name: AstroDX B50 悬浮窗
+Version: 1.0.0
+Architecture: iphoneos-arm64
+Description: 在 AstroDX 里点一下悬浮球，直接看 B50（读的是 App 自己的 Documents/cache）
+Maintainer: Zephyr风白
+Author: Zephyr风白
+Section: Tweaks
+Depends: firmware (>= 15.0)
