@@ -22,7 +22,6 @@ static UIColor *ADXDiffColor(int d)
 @property (nonatomic, strong) ADXB50Result *result;
 @property (nonatomic, assign) BOOL loading;
 @property (nonatomic, copy) NSString *errorText;
-- (void)dismissSelf;
 @end
 
 @implementation ADXB50Panel
@@ -30,7 +29,7 @@ static UIColor *ADXDiffColor(int d)
 - (instancetype)init
 {
     self = [super initWithStyle:UITableViewStyleInsetGrouped];
-    if (self) self.title = @"B50 v2";
+    if (self) self.title = @"B50 v3";
     return self;
 }
 
@@ -49,7 +48,7 @@ static UIColor *ADXDiffColor(int d)
     self.errorText = nil;
     self.result = nil;
     [self.tableView reloadData];
-    self.title = @"B50 v2 · 读取中…";
+    self.title = @"B50 v3 · 读取中…";
 
     NSString *docs = [NSHomeDirectory() stringByAppendingPathComponent:@"Documents"];
     NSString *cachePath = [docs stringByAppendingPathComponent:@"cache"];
@@ -66,10 +65,10 @@ static UIColor *ADXDiffColor(int d)
             self.loading = NO;
             if (err) {
                 self.errorText = err.localizedDescription;
-                self.title = @"B50 v2 · 失败";
+                self.title = @"B50 v3 · 失败";
             } else {
                 self.result = res;
-                self.title = [NSString stringWithFormat:@"B50 v2 · %d", res.total];
+                self.title = [NSString stringWithFormat:@"B50 v3 · %d", res.total];
             }
             [self.tableView reloadData];
         });
@@ -130,8 +129,6 @@ static UIColor *ADXDiffColor(int d)
     return cell;
 }
 
-- (void)dismissSelf { [self dismissViewControllerAnimated:YES completion:nil]; }
-
 @end
 
 #pragma mark - 浮窗
@@ -142,6 +139,7 @@ static UIColor *ADXDiffColor(int d)
 @implementation ADXRuntime
 
 static UIWindow *gWindow;
+static UIWindow *gPanelWindow;
 static UIButton *gButton;
 static CGSize gScreenSize;
 
@@ -226,20 +224,42 @@ static CGSize gScreenSize;
     [g setTranslation:CGPointZero inView:nil];
 }
 
+/// 面板放在自己的窗口里（只有面板那么大），不走模态弹出，
+/// 避免 Unity 的视图层级把 form sheet 挤变形
 + (void)openPanel
 {
-    UIViewController *host = [self appTopViewController];
-    if (!host) host = gWindow.rootViewController;
-    if (!host || host.presentedViewController) return;
+    if (gPanelWindow) return;
+
+    CGSize screen = gScreenSize;
+    CGFloat w = MIN(660, screen.width - 80);
+    CGFloat h = MIN(780, screen.height - 80);
+    CGRect frame = CGRectMake((screen.width - w) / 2, (screen.height - h) / 2, w, h);
+
+    UIWindowScene *scene = [self activeScene];
+    if (scene) {
+        gPanelWindow = [[UIWindow alloc] initWithWindowScene:scene];
+        gPanelWindow.frame = frame;
+    } else {
+        gPanelWindow = [[UIWindow alloc] initWithFrame:frame];
+    }
+    gPanelWindow.windowLevel = UIWindowLevelAlert + 2;
+    gPanelWindow.backgroundColor = [UIColor systemBackgroundColor];
+    gPanelWindow.layer.cornerRadius = 16;
+    gPanelWindow.layer.masksToBounds = YES;
 
     ADXB50Panel *panel = [ADXB50Panel new];
     UINavigationController *nav = [[UINavigationController alloc] initWithRootViewController:panel];
-    nav.modalPresentationStyle = UIModalPresentationFormSheet;
-    nav.preferredContentSize = CGSizeMake(620, 780);
     panel.navigationItem.leftBarButtonItem =
         [[UIBarButtonItem alloc] initWithTitle:@"关闭" style:UIBarButtonItemStyleDone
-                                        target:panel action:@selector(dismissSelf)];
-    [host presentViewController:nav animated:YES completion:nil];
+                                        target:self action:@selector(closePanel)];
+    gPanelWindow.rootViewController = nav;
+    gPanelWindow.hidden = NO;
+}
+
++ (void)closePanel
+{
+    gPanelWindow.hidden = YES;
+    gPanelWindow = nil;
 }
 
 @end
