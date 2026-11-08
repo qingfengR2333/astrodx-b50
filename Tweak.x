@@ -3,6 +3,7 @@
 #import "B50Core.h"
 #import "ImportPanel.h"
 #import "B50Image.h"
+#import "SettingsPanel.h"
 
 #pragma mark - 颜色
 
@@ -42,7 +43,7 @@ static UIColor *ADXDiffColor(int d)
         [[UIBarButtonItem alloc] initWithTitle:@"重新读取" style:UIBarButtonItemStylePlain
                                         target:self action:@selector(reloadData)];
     UIBarButtonItem *exportItem =
-        [[UIBarButtonItem alloc] initWithTitle:@"导出图" style:UIBarButtonItemStyleDone
+        [[UIBarButtonItem alloc] initWithTitle:@"导出图" style:UIBarButtonItemStylePlain
                                         target:self action:@selector(exportImage)];
     // 数组第一个在最右边
     self.navigationItem.rightBarButtonItems = @[exportItem, reloadItem];
@@ -175,6 +176,44 @@ static UIColor *ADXDiffColor(int d)
     return cell;
 }
 
+- (void)shareFile:(NSString *)path
+{
+    NSURL *url = [NSURL fileURLWithPath:path];
+    UIActivityViewController *av =
+        [[UIActivityViewController alloc] initWithActivityItems:@[url] applicationActivities:nil];
+    av.popoverPresentationController.sourceView = self.view;
+    av.popoverPresentationController.sourceRect = CGRectMake(CGRectGetMidX(self.view.bounds), 44, 1, 1);
+    [self presentViewController:av animated:YES completion:nil];
+}
+
+- (void)exportScoresCsv
+{
+    NSString *docs = [NSHomeDirectory() stringByAppendingPathComponent:@"Documents"];
+    NSError *err = nil;
+    NSDictionary *cache = [ADXB50 readCacheAt:[docs stringByAppendingPathComponent:@"cache"] error:&err];
+    if (!cache) {
+        UIAlertController *a = [UIAlertController alertControllerWithTitle:@"导出失败"
+                                                                  message:err.localizedDescription
+                                                           preferredStyle:UIAlertControllerStyleAlert];
+        [a addAction:[UIAlertAction actionWithTitle:@"好" style:UIAlertActionStyleDefault handler:nil]];
+        [self presentViewController:a animated:YES completion:nil];
+        return;
+    }
+    NSString *csv = [ADXB50 scoresCsv:cache playedOnly:YES];
+    NSString *path = [docs stringByAppendingPathComponent:@"astrodx_scores.csv"];
+    [csv writeToFile:path atomically:YES encoding:NSUTF8StringEncoding error:nil];
+    [self shareFile:path];
+}
+
+- (void)exportB50Csv
+{
+    if (!self.result) return;
+    NSString *docs = [NSHomeDirectory() stringByAppendingPathComponent:@"Documents"];
+    NSString *path = [docs stringByAppendingPathComponent:@"astrodx_b50.csv"];
+    [[ADXB50 b50Csv:self.result] writeToFile:path atomically:YES encoding:NSUTF8StringEncoding error:nil];
+    [self shareFile:path];
+}
+
 @end
 
 #pragma mark - 浮窗
@@ -187,6 +226,10 @@ static UIColor *ADXDiffColor(int d)
 static UIWindow *gWindow;
 static UIWindow *gPanelWindow;
 static UIView *gBall;
+static UILabel *gBallLabel;
+static UIGestureRecognizer *gTapOnce;
+static UIGestureRecognizer *gTapTwice;
+static UIGestureRecognizer *gLongPress;
 static CGSize gScreenSize;
 
 + (UIWindowScene *)activeScene
@@ -199,21 +242,41 @@ static CGSize gScreenSize;
     return nil;
 }
 
-/// 找到游戏自己的顶层控制器（用来弹面板，别用我们那个小窗口）
-+ (UIViewController *)appTopViewController
++ (UIFont *)fontForBall:(CGFloat)side text:(NSString *)text
 {
-    UIWindow *target = nil;
-    for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
-        if (![scene isKindOfClass:[UIWindowScene class]]) continue;
-        for (UIWindow *w in ((UIWindowScene *)scene).windows) {
-            if (w == gWindow) continue;
-            if (w.isKeyWindow) { target = w; break; }
-        }
-        if (target) break;
+    for (CGFloat f = side * 0.42; f > 6; f -= 1) {
+        UIFont *font = [UIFont boldSystemFontOfSize:f];
+        CGSize sz = [text sizeWithAttributes:@{NSFontAttributeName: font}];
+        if (sz.width <= side * 0.80 && sz.height <= side * 0.60) return font;
     }
-    UIViewController *vc = target.rootViewController;
-    while (vc.presentedViewController) vc = vc.presentedViewController;
-    return vc;
+    return [UIFont boldSystemFontOfSize:8];
+}
+
++ (void)applySettings
+{
+    if (!gWindow || !gBall) return;
+
+    CGFloat side = [ADXSettings size];
+    CGRect f = gWindow.frame;
+    CGPoint center = CGPointMake(CGRectGetMidX(f), CGRectGetMidY(f));
+    f.size = CGSizeMake(side, side);
+    f.origin = CGPointMake(center.x - side / 2, center.y - side / 2);
+    f.origin.x = MAX(0, MIN(f.origin.x, gScreenSize.width - side));
+    f.origin.y = MAX(0, MIN(f.origin.y, gScreenSize.height - side));
+    gWindow.frame = f;
+
+    gBall.frame = CGRectMake(0, 0, side, side);
+    gBall.layer.cornerRadius = side / 2;
+    gBall.backgroundColor = [[ADXSettings color] colorWithAlphaComponent:[ADXSettings alpha]];
+
+    gBallLabel.frame = gBall.bounds;
+    gBallLabel.text = [ADXSettings text];
+    gBallLabel.font = [self fontForBall:side text:gBallLabel.text];
+
+    NSInteger t = [ADXSettings trigger];
+    gTapOnce.enabled = (t == 0);
+    gTapTwice.enabled = (t == 1);
+    gLongPress.enabled = (t == 2);
 }
 
 + (void)install
@@ -224,10 +287,9 @@ static CGSize gScreenSize;
     CGSize screen = scene ? scene.coordinateSpace.bounds.size : [UIScreen mainScreen].bounds.size;
     gScreenSize = screen;
 
-    const CGFloat side = 56;
+    CGFloat side = 56;
     CGRect frame = CGRectMake(screen.width - side - 12, screen.height * 0.35, side, side);
 
-    // 关键：窗口只有 56×56，只盖住球本身，屏幕其余部分完全不受影响
     if (scene) {
         gWindow = [[UIWindow alloc] initWithWindowScene:scene];
         gWindow.frame = frame;
@@ -240,36 +302,54 @@ static CGSize gScreenSize;
     gWindow.rootViewController.view.backgroundColor = [UIColor clearColor];
     gWindow.hidden = NO;
 
-    UIView *ball = [[UIView alloc] initWithFrame:CGRectMake(0, 0, side, side)];
-    ball.backgroundColor = [UIColor colorWithRed:0.26 green:0.52 blue:0.97 alpha:0.92];
-    ball.layer.cornerRadius = side / 2;
-    ball.layer.masksToBounds = NO;
-    ball.layer.shadowColor = [UIColor blackColor].CGColor;
-    ball.layer.shadowOpacity = 0.25;
-    ball.layer.shadowRadius = 6;
-    ball.layer.shadowOffset = CGSizeMake(0, 2);
-    ball.userInteractionEnabled = YES;
+    gBall = [[UIView alloc] initWithFrame:CGRectMake(0, 0, side, side)];
+    gBall.layer.masksToBounds = NO;
+    gBall.layer.shadowColor = [UIColor blackColor].CGColor;
+    gBall.layer.shadowOpacity = 0.25;
+    gBall.layer.shadowRadius = 6;
+    gBall.layer.shadowOffset = CGSizeMake(0, 2);
+    gBall.userInteractionEnabled = YES;
 
-    UILabel *ballLabel = [[UILabel alloc] initWithFrame:ball.bounds];
-    ballLabel.text = @"ADX";
-    ballLabel.textColor = [UIColor whiteColor];
-    ballLabel.font = [UIFont boldSystemFontOfSize:15];
-    ballLabel.textAlignment = NSTextAlignmentCenter;
-    ballLabel.userInteractionEnabled = NO;
-    [ball addSubview:ballLabel];
+    gBallLabel = [[UILabel alloc] initWithFrame:gBall.bounds];
+    gBallLabel.textColor = [UIColor whiteColor];
+    gBallLabel.textAlignment = NSTextAlignmentCenter;
+    gBallLabel.userInteractionEnabled = NO;
+    [gBall addSubview:gBallLabel];
 
-    // 双击才打开，避免游玩时误触
-    UITapGestureRecognizer *doubleTap =
+    UITapGestureRecognizer *once =
         [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(openPanel)];
-    doubleTap.numberOfTapsRequired = 2;
-    [ball addGestureRecognizer:doubleTap];
-    [ball addGestureRecognizer:[[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(pan:)]];
+    once.numberOfTapsRequired = 1;
+    gTapOnce = once;
 
-    gBall = ball;
-    [gWindow.rootViewController.view addSubview:ball];
+    UITapGestureRecognizer *twice =
+        [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(openPanel)];
+    twice.numberOfTapsRequired = 2;
+    gTapTwice = twice;
+
+    UILongPressGestureRecognizer *lp =
+        [[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(onLongPress:)];
+    lp.minimumPressDuration = 0.6;
+    gLongPress = lp;
+
+    [gBall addGestureRecognizer:gTapOnce];
+    [gBall addGestureRecognizer:gTapTwice];
+    [gBall addGestureRecognizer:gLongPress];
+    [gBall addGestureRecognizer:[[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(pan:)]];
+
+    [gWindow.rootViewController.view addSubview:gBall];
+
+    [self applySettings];
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(applySettings)
+                                                 name:ADXSettingsChangedNotification
+                                               object:nil];
 }
 
-/// 拖动的是整个窗口（不是球），所以球的点击区域始终跟着走
++ (void)onLongPress:(UILongPressGestureRecognizer *)g
+{
+    if (g.state == UIGestureRecognizerStateBegan) [self openPanel];
+}
+
 + (void)pan:(UIPanGestureRecognizer *)g
 {
     CGPoint t = [g translationInView:nil];
@@ -282,8 +362,6 @@ static CGSize gScreenSize;
     [g setTranslation:CGPointZero inView:nil];
 }
 
-/// 面板放在自己的窗口里（只有面板那么大），不走模态弹出，
-/// 避免 Unity 的视图层级把 form sheet 挤变形
 + (void)openPanel
 {
     if (gPanelWindow) return;
@@ -307,12 +385,20 @@ static CGSize gScreenSize;
 
     ADXB50Panel *b50 = [ADXB50Panel new];
     UINavigationController *navB50 = [[UINavigationController alloc] initWithRootViewController:b50];
-    navB50.tabBarItem = [[UITabBarItem alloc] initWithTitle:@"B50"
+    navB50.tabBarItem = [[UITabBarItem alloc] initWithTitle:@"B50成绩图"
                                                       image:[UIImage systemImageNamed:@"chart.bar.fill"]
                                                         tag:0];
-    b50.navigationItem.leftBarButtonItem =
-        [[UIBarButtonItem alloc] initWithTitle:@"关闭" style:UIBarButtonItemStyleDone
+
+    UIBarButtonItem *close1 =
+        [[UIBarButtonItem alloc] initWithTitle:@"关闭" style:UIBarButtonItemStylePlain
                                         target:self action:@selector(closePanel)];
+    UIBarButtonItem *csvScores =
+        [[UIBarButtonItem alloc] initWithTitle:@"导出分表" style:UIBarButtonItemStylePlain
+                                        target:b50 action:@selector(exportScoresCsv)];
+    UIBarButtonItem *csvB50 =
+        [[UIBarButtonItem alloc] initWithTitle:@"导出b50表" style:UIBarButtonItemStylePlain
+                                        target:b50 action:@selector(exportB50Csv)];
+    b50.navigationItem.leftBarButtonItems = @[close1, csvScores, csvB50];
 
     ADXImportPanel *imp = [ADXImportPanel new];
     UINavigationController *navImp = [[UINavigationController alloc] initWithRootViewController:imp];
@@ -320,11 +406,20 @@ static CGSize gScreenSize;
                                                       image:[UIImage systemImageNamed:@"square.and.arrow.down"]
                                                         tag:1];
     imp.navigationItem.leftBarButtonItem =
-        [[UIBarButtonItem alloc] initWithTitle:@"关闭" style:UIBarButtonItemStyleDone
+        [[UIBarButtonItem alloc] initWithTitle:@"关闭" style:UIBarButtonItemStylePlain
+                                        target:self action:@selector(closePanel)];
+
+    ADXSettingsPanel *set = [ADXSettingsPanel new];
+    UINavigationController *navSet = [[UINavigationController alloc] initWithRootViewController:set];
+    navSet.tabBarItem = [[UITabBarItem alloc] initWithTitle:@"设置"
+                                                      image:[UIImage systemImageNamed:@"gearshape.fill"]
+                                                        tag:2];
+    set.navigationItem.leftBarButtonItem =
+        [[UIBarButtonItem alloc] initWithTitle:@"关闭" style:UIBarButtonItemStylePlain
                                         target:self action:@selector(closePanel)];
 
     UITabBarController *tabs = [UITabBarController new];
-    tabs.viewControllers = @[navB50, navImp];
+    tabs.viewControllers = @[navB50, navImp, navSet];
     gPanelWindow.rootViewController = tabs;
     gPanelWindow.hidden = NO;
 }

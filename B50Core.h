@@ -33,4 +33,10 @@
 /// 计算 B50
 + (ADXB50Result *)computeWithCache:(NSDictionary *)cache db:(NSDictionary *)db;
 
+/// 生成成绩表 CSV（level_key,path,title,... 与 PC 版一致）
++ (NSString *)scoresCsv:(NSDictionary *)cache playedOnly:(BOOL)only;
+
+/// 生成 B50 明细 CSV
++ (NSString *)b50Csv:(ADXB50Result *)result;
+
 @end
