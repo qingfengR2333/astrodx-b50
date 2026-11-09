@@ -4,6 +4,7 @@
 #import "ImportPanel.h"
 #import "B50Image.h"
 #import "SettingsPanel.h"
+#import "ResourcePanel.h"
 
 #pragma mark - 颜色
 
@@ -433,17 +434,26 @@ static UINavigationController *gB50Nav;
         [[UIBarButtonItem alloc] initWithTitle:@"关闭" style:UIBarButtonItemStylePlain
                                         target:self action:@selector(closePanel)];
 
+    ADXResourcePanel *res = [ADXResourcePanel new];
+    UINavigationController *navRes = [[UINavigationController alloc] initWithRootViewController:res];
+    navRes.tabBarItem = [[UITabBarItem alloc] initWithTitle:@"资源管理"
+                                                      image:[UIImage systemImageNamed:@"folder.fill"]
+                                                        tag:2];
+    res.navigationItem.leftBarButtonItem =
+        [[UIBarButtonItem alloc] initWithTitle:@"关闭" style:UIBarButtonItemStylePlain
+                                        target:self action:@selector(closePanel)];
+
     ADXSettingsPanel *set = [ADXSettingsPanel new];
     UINavigationController *navSet = [[UINavigationController alloc] initWithRootViewController:set];
     navSet.tabBarItem = [[UITabBarItem alloc] initWithTitle:@"设置"
                                                       image:[UIImage systemImageNamed:@"gearshape.fill"]
-                                                        tag:2];
+                                                        tag:3];
     set.navigationItem.leftBarButtonItem =
         [[UIBarButtonItem alloc] initWithTitle:@"关闭" style:UIBarButtonItemStylePlain
                                         target:self action:@selector(closePanel)];
 
     UITabBarController *tabs = [UITabBarController new];
-    tabs.viewControllers = @[navB50, navImp, navSet];
+    tabs.viewControllers = @[navB50, navImp, navRes, navSet];
     gPanelWindow.rootViewController = tabs;
     gPanelWindow.hidden = NO;
 }
