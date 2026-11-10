@@ -5,6 +5,7 @@
 #import "B50Image.h"
 #import "SettingsPanel.h"
 #import "ResourcePanel.h"
+#import "AboutPanel.h"
 
 #pragma mark - 颜色
 
@@ -452,8 +453,17 @@ static UINavigationController *gB50Nav;
         [[UIBarButtonItem alloc] initWithTitle:@"关闭" style:UIBarButtonItemStylePlain
                                         target:self action:@selector(closePanel)];
 
+    ADXAboutPanel *about = [ADXAboutPanel new];
+    UINavigationController *navAbout = [[UINavigationController alloc] initWithRootViewController:about];
+    navAbout.tabBarItem = [[UITabBarItem alloc] initWithTitle:@"关于"
+                                                        image:[UIImage systemImageNamed:@"info.circle.fill"]
+                                                          tag:4];
+    about.navigationItem.leftBarButtonItem =
+        [[UIBarButtonItem alloc] initWithTitle:@"关闭" style:UIBarButtonItemStylePlain
+                                        target:self action:@selector(closePanel)];
+
     UITabBarController *tabs = [UITabBarController new];
-    tabs.viewControllers = @[navB50, navImp, navRes, navSet];
+    tabs.viewControllers = @[navB50, navImp, navRes, navSet, navAbout];
     gPanelWindow.rootViewController = tabs;
     gPanelWindow.hidden = NO;
 }
