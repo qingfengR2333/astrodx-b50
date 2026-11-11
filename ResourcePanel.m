@@ -4,10 +4,15 @@
 #pragma mark - 列表单元格
 
 @interface ADXResCell : UITableViewCell
+@property (nonatomic, strong) UIImageView *folderIcon;
 @property (nonatomic, strong) UILabel *nameLabel;
 @property (nonatomic, strong) UILabel *subLabel;
 @property (nonatomic, strong) UILabel *dateLabel;
 @property (nonatomic, strong) UILabel *sizeLabel;
+@property (nonatomic, strong) UIImageView *checkView;
+@property (nonatomic, strong) NSLayoutConstraint *nameToDate;
+@property (nonatomic, strong) NSLayoutConstraint *nameToCheck;
+- (void)setSelecting:(BOOL)selecting checked:(BOOL)checked;
 @end
 
 @implementation ADXResCell
@@ -17,6 +22,11 @@
     self = [super initWithStyle:style reuseIdentifier:reuseIdentifier];
     if (!self) return nil;
     self.selectionStyle = UITableViewCellSelectionStyleNone;
+
+    _folderIcon = [UIImageView new];
+    _folderIcon.image = [UIImage systemImageNamed:@"folder.fill"];
+    _folderIcon.tintColor = [UIColor systemTealColor];
+    _folderIcon.contentMode = UIViewContentModeScaleAspectFit;
 
     _nameLabel = [UILabel new];
     _nameLabel.font = [UIFont systemFontOfSize:14];
@@ -32,29 +42,64 @@
     _sizeLabel.textColor = [UIColor secondaryLabelColor];
     _sizeLabel.textAlignment = NSTextAlignmentRight;
 
-    for (UILabel *l in @[_nameLabel, _subLabel, _dateLabel, _sizeLabel]) {
-        l.translatesAutoresizingMaskIntoConstraints = NO;
-        [self.contentView addSubview:l];
+    _checkView = [UIImageView new];
+    _checkView.contentMode = UIViewContentModeScaleAspectFit;
+    _checkView.hidden = YES;
+
+    for (UIView *v in @[_folderIcon, _nameLabel, _subLabel, _dateLabel, _sizeLabel, _checkView]) {
+        v.translatesAutoresizingMaskIntoConstraints = NO;
+        [self.contentView addSubview:v];
     }
 
+    _nameToDate = [_nameLabel.trailingAnchor constraintLessThanOrEqualToAnchor:_dateLabel.leadingAnchor constant:-8];
+    _nameToCheck = [_nameLabel.trailingAnchor constraintLessThanOrEqualToAnchor:_checkView.leadingAnchor constant:-8];
+    _nameToCheck.active = NO;
+
     [NSLayoutConstraint activateConstraints:@[
-        [_nameLabel.leadingAnchor constraintEqualToAnchor:self.contentView.leadingAnchor constant:16],
-        [_nameLabel.topAnchor constraintEqualToAnchor:self.contentView.topAnchor constant:8],
-        [_nameLabel.trailingAnchor constraintLessThanOrEqualToAnchor:_dateLabel.leadingAnchor constant:-8],
+        [_folderIcon.leadingAnchor constraintEqualToAnchor:self.contentView.leadingAnchor constant:16],
+        [_folderIcon.centerYAnchor constraintEqualToAnchor:self.contentView.centerYAnchor],
+        [_folderIcon.widthAnchor constraintEqualToConstant:26],
+        [_folderIcon.heightAnchor constraintEqualToConstant:22],
+
+        [_nameLabel.leadingAnchor constraintEqualToAnchor:_folderIcon.trailingAnchor constant:10],
+        [_nameLabel.topAnchor constraintEqualToAnchor:self.contentView.topAnchor constant:9],
+        _nameToDate,
 
         [_subLabel.leadingAnchor constraintEqualToAnchor:_nameLabel.leadingAnchor],
         [_subLabel.topAnchor constraintEqualToAnchor:_nameLabel.bottomAnchor constant:2],
-        [_subLabel.trailingAnchor constraintLessThanOrEqualToAnchor:_sizeLabel.leadingAnchor constant:-8],
+        [_subLabel.trailingAnchor constraintLessThanOrEqualToAnchor:_dateLabel.leadingAnchor constant:-8],
 
         [_dateLabel.trailingAnchor constraintEqualToAnchor:self.contentView.trailingAnchor constant:-16],
-        [_dateLabel.topAnchor constraintEqualToAnchor:self.contentView.topAnchor constant:8],
+        [_dateLabel.topAnchor constraintEqualToAnchor:self.contentView.topAnchor constant:9],
         [_dateLabel.widthAnchor constraintEqualToConstant:130],
 
         [_sizeLabel.trailingAnchor constraintEqualToAnchor:_dateLabel.trailingAnchor],
         [_sizeLabel.topAnchor constraintEqualToAnchor:_dateLabel.bottomAnchor constant:2],
-        [_sizeLabel.widthAnchor constraintEqualToConstant:130]
+        [_sizeLabel.widthAnchor constraintEqualToConstant:130],
+
+        [_checkView.trailingAnchor constraintEqualToAnchor:self.contentView.trailingAnchor constant:-16],
+        [_checkView.centerYAnchor constraintEqualToAnchor:self.contentView.centerYAnchor],
+        [_checkView.widthAnchor constraintEqualToConstant:24],
+        [_checkView.heightAnchor constraintEqualToConstant:24]
     ]];
     return self;
+}
+
+- (void)setSelecting:(BOOL)selecting checked:(BOOL)checked
+{
+    _dateLabel.hidden = selecting;
+    _sizeLabel.hidden = selecting;
+    _checkView.hidden = !selecting;
+
+    _nameToDate.active = !selecting;
+    _nameToCheck.active = selecting;
+
+    _checkView.image = [UIImage systemImageNamed:checked ? @"checkmark.circle.fill" : @"circle"];
+    _checkView.tintColor = checked ? [UIColor systemBlueColor] : [UIColor tertiaryLabelColor];
+
+    self.contentView.backgroundColor = (selecting && checked)
+        ? [[UIColor systemBlueColor] colorWithAlphaComponent:0.12]
+        : [UIColor clearColor];
 }
 
 @end
@@ -126,7 +171,9 @@
 @property (nonatomic, strong) UIButton *renameBtn;
 @property (nonatomic, strong) UIButton *deleteBtn;
 @property (nonatomic, strong) UIButton *refreshBtn;
+@property (nonatomic, strong) UIStackView *bottomBar;
 @property (nonatomic, strong) UILabel *countLabel;
+@property (nonatomic, strong) UIBarButtonItem *selectItem;
 @property (nonatomic, strong) UIBarButtonItem *selectAllItem;
 
 @property (nonatomic, copy) NSString *kind;
@@ -138,6 +185,14 @@
 
 @property (nonatomic, assign) NSInteger viewMode;   // 0 列表 1 图标
 @property (nonatomic, assign) NSInteger sortMode;   // 0 名称 1 日期 2 大小
+
+@property (nonatomic, assign) BOOL selecting;
+@property (nonatomic, assign) BOOL dragging;
+@property (nonatomic, assign) CGPoint dragPoint;
+@property (nonatomic, strong) NSTimer *autoScrollTimer;
+@property (nonatomic, assign) BOOL autoScrollUp;
+@property (nonatomic, assign) BOOL autoScrollDown;
+@property (nonatomic, assign) NSInteger dragStartIndex;
 @end
 
 @implementation ADXResourcePanel
@@ -154,11 +209,14 @@
     self.viewMode = 0;
     self.sortMode = 0;
 
+    self.selectItem = [[UIBarButtonItem alloc] initWithTitle:@"选择"
+                                                       style:UIBarButtonItemStylePlain
+                                                      target:self
+                                                      action:@selector(toggleSelectMode)];
     self.selectAllItem = [[UIBarButtonItem alloc] initWithTitle:@"全选"
                                                           style:UIBarButtonItemStylePlain
                                                          target:self
                                                          action:@selector(toggleSelectAll)];
-    self.navigationItem.rightBarButtonItem = self.selectAllItem;
 
     self.segment = [[UISegmentedControl alloc] initWithItems:@[@"谱面管理", @"皮肤管理"]];
     self.segment.selectedSegmentIndex = 0;
@@ -196,17 +254,18 @@
     self.countLabel.font = [UIFont systemFontOfSize:12];
     self.countLabel.textColor = [UIColor secondaryLabelColor];
 
+    self.refreshBtn = [self bottomButton:@"刷新" action:@selector(reloadList) color:[UIColor systemBlueColor]];
     self.renameBtn = [self bottomButton:@"重命名" action:@selector(renameSelected) color:[UIColor systemBlueColor]];
     self.deleteBtn = [self bottomButton:@"删除" action:@selector(deleteSelected) color:[UIColor systemRedColor]];
-    self.refreshBtn = [self bottomButton:@"刷新" action:@selector(reloadList) color:[UIColor systemBlueColor]];
 
-    UIStackView *buttons = [[UIStackView alloc] initWithArrangedSubviews:@[self.renameBtn, self.deleteBtn, self.refreshBtn]];
-    buttons.axis = UILayoutConstraintAxisHorizontal;
-    buttons.spacing = 10;
-    buttons.distribution = UIStackViewDistributionFillEqually;
+    self.bottomBar = [[UIStackView alloc] initWithArrangedSubviews:@[self.refreshBtn, self.renameBtn, self.deleteBtn]];
+    self.bottomBar.axis = UILayoutConstraintAxisHorizontal;
+    self.bottomBar.spacing = 10;
+    self.bottomBar.distribution = UIStackViewDistributionFillEqually;
+    self.bottomBar.hidden = YES;
 
     for (UIView *v in @[self.segment, self.searchBar, self.filterBtn, self.table, self.grid,
-                        self.countLabel, buttons]) {
+                        self.countLabel, self.bottomBar]) {
         v.translatesAutoresizingMaskIntoConstraints = NO;
         [self.view addSubview:v];
     }
@@ -238,14 +297,25 @@
 
         [self.countLabel.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor constant:16],
         [self.countLabel.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor constant:-16],
-        [self.countLabel.bottomAnchor constraintEqualToAnchor:buttons.topAnchor constant:-6],
+        [self.countLabel.bottomAnchor constraintEqualToAnchor:self.bottomBar.topAnchor constant:-6],
 
-        [buttons.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor constant:16],
-        [buttons.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor constant:-16],
-        [buttons.bottomAnchor constraintEqualToAnchor:safe.bottomAnchor constant:-10],
-        [buttons.heightAnchor constraintEqualToConstant:44]
+        [self.bottomBar.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor constant:16],
+        [self.bottomBar.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor constant:-16],
+        [self.bottomBar.bottomAnchor constraintEqualToAnchor:safe.bottomAnchor constant:-10],
+        [self.bottomBar.heightAnchor constraintEqualToConstant:44]
     ]];
 
+    UILongPressGestureRecognizer *tablePress =
+        [[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(handleTableLongPress:)];
+    tablePress.minimumPressDuration = 0.35;
+    [self.table addGestureRecognizer:tablePress];
+
+    UILongPressGestureRecognizer *gridPress =
+        [[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(handleGridLongPress:)];
+    gridPress.minimumPressDuration = 0.35;
+    [self.grid addGestureRecognizer:gridPress];
+
+    [self applySelectModeAppearance];
     [self reloadList];
 }
 
@@ -273,6 +343,44 @@
     b.layer.cornerRadius = 10;
     [b addTarget:self action:action forControlEvents:UIControlEventTouchUpInside];
     return b;
+}
+
+#pragma mark - 选择模式
+
+- (void)applySelectModeAppearance
+{
+    self.selectItem.title = self.selecting ? @"完成" : @"选择";
+    // 数组第一个在最右边：完成 | 全选
+    self.navigationItem.rightBarButtonItems = self.selecting
+        ? @[self.selectItem, self.selectAllItem]
+        : @[self.selectItem];
+    self.bottomBar.hidden = !self.selecting;
+    self.countLabel.hidden = NO;
+}
+
+- (void)toggleSelectMode
+{
+    self.selecting = !self.selecting;
+    if (!self.selecting) [self.selected removeAllObjects];
+    self.dragging = NO;
+    [self stopAutoScroll];
+    [self applySelectModeAppearance];
+    [self.table reloadData];
+    [self.grid reloadData];
+    [self refreshSelectionUI];
+}
+
+- (void)enterSelectionMode
+{
+    if (self.selecting) return;
+    self.selecting = YES;
+    [self applySelectModeAppearance];
+}
+
+- (void)addToSelection:(NSString *)name
+{
+    if (!name) return;
+    [self.selected addObject:name];
 }
 
 #pragma mark - 目录与元信息
@@ -400,6 +508,131 @@
     self.selectAllItem.title = allSelected ? @"取消全选" : @"全选";
 }
 
+#pragma mark - 长按拖动选择
+
+- (void)handleTableLongPress:(UILongPressGestureRecognizer *)g
+{
+    CGPoint p = [g locationInView:self.table];
+
+    if (g.state == UIGestureRecognizerStateBegan) {
+        [self enterSelectionMode];
+        NSIndexPath *ip = [self.table indexPathForRowAtPoint:p];
+        if (!ip) return;
+        self.dragging = YES;
+        self.dragPoint = p;
+        self.dragStartIndex = ip.row;
+        [self addToSelection:self.shownItems[ip.row]];
+        [self.table reloadData];
+        [self refreshSelectionUI];
+        [self updateAutoScrollForPoint:p inScrollView:self.table];
+    } else if (g.state == UIGestureRecognizerStateChanged) {
+        if (!self.dragging) return;
+        self.dragPoint = p;
+        NSIndexPath *ip = [self.table indexPathForRowAtPoint:p];
+        if (ip) {
+            [self addToSelection:self.shownItems[ip.row]];
+            [self.table reloadRowsAtIndexPaths:@[ip] withRowAnimation:UITableViewRowAnimationNone];
+            [self refreshSelectionUI];
+        }
+        [self updateAutoScrollForPoint:p inScrollView:self.table];
+    } else {
+        self.dragging = NO;
+        [self stopAutoScroll];
+    }
+}
+
+- (void)handleGridLongPress:(UILongPressGestureRecognizer *)g
+{
+    CGPoint p = [g locationInView:self.grid];
+
+    if (g.state == UIGestureRecognizerStateBegan) {
+        [self enterSelectionMode];
+        NSIndexPath *ip = [self.grid indexPathForItemAtPoint:p];
+        if (!ip) return;
+        self.dragging = YES;
+        self.dragPoint = p;
+        self.dragStartIndex = ip.item;
+        [self addToSelection:self.shownItems[ip.item]];
+        [self.grid reloadData];
+        [self refreshSelectionUI];
+        [self updateAutoScrollForPoint:p inScrollView:self.grid];
+    } else if (g.state == UIGestureRecognizerStateChanged) {
+        if (!self.dragging) return;
+        self.dragPoint = p;
+        NSIndexPath *ip = [self.grid indexPathForItemAtPoint:p];
+        if (ip) {
+            NSInteger a = MIN(self.dragStartIndex, ip.item);
+            NSInteger b = MAX(self.dragStartIndex, ip.item);
+            for (NSInteger i = a; i <= b && i < (NSInteger)self.shownItems.count; i++)
+                [self addToSelection:self.shownItems[i]];
+            [self.grid reloadData];
+            [self refreshSelectionUI];
+        }
+        [self updateAutoScrollForPoint:p inScrollView:self.grid];
+    } else {
+        self.dragging = NO;
+        [self stopAutoScroll];
+    }
+}
+
+- (void)updateAutoScrollForPoint:(CGPoint)p inScrollView:(UIScrollView *)sv
+{
+    CGFloat edge = 70;
+    self.autoScrollUp = (p.y < edge);
+    self.autoScrollDown = (p.y > sv.bounds.size.height - edge);
+
+    if (self.autoScrollUp || self.autoScrollDown) {
+        if (!self.autoScrollTimer) {
+            self.autoScrollTimer =
+                [NSTimer scheduledTimerWithTimeInterval:0.04 target:self
+                                               selector:@selector(autoScrollTick)
+                                               userInfo:nil repeats:YES];
+        }
+    } else {
+        [self stopAutoScroll];
+    }
+}
+
+- (void)stopAutoScroll
+{
+    [self.autoScrollTimer invalidate];
+    self.autoScrollTimer = nil;
+    self.autoScrollUp = NO;
+    self.autoScrollDown = NO;
+}
+
+- (void)autoScrollTick
+{
+    if (!self.dragging) { [self stopAutoScroll]; return; }
+
+    UIScrollView *sv = (self.viewMode == 1) ? self.grid : self.table;
+    CGFloat dy = self.autoScrollUp ? -9 : (self.autoScrollDown ? 9 : 0);
+    if (dy == 0) return;
+
+    CGPoint off = sv.contentOffset;
+    CGFloat maxY = MAX(0, sv.contentSize.height - sv.bounds.size.height);
+    off.y = MAX(0, MIN(maxY, off.y + dy));
+    [sv setContentOffset:off animated:NO];
+
+    if (self.viewMode == 1) {
+        NSIndexPath *ip = [self.grid indexPathForItemAtPoint:self.dragPoint];
+        if (ip) {
+            NSInteger a = MIN(self.dragStartIndex, ip.item);
+            NSInteger b = MAX(self.dragStartIndex, ip.item);
+            for (NSInteger i = a; i <= b && i < (NSInteger)self.shownItems.count; i++)
+                [self addToSelection:self.shownItems[i]];
+            [self.grid reloadData];
+        }
+    } else {
+        NSIndexPath *ip = [self.table indexPathForRowAtPoint:self.dragPoint];
+        if (ip) {
+            [self addToSelection:self.shownItems[ip.row]];
+            [self.table reloadRowsAtIndexPaths:@[ip] withRowAnimation:UITableViewRowAnimationNone];
+        }
+    }
+    [self refreshSelectionUI];
+}
+
 #pragma mark - 视图切换 / 排序菜单
 
 - (void)showFilterMenu
@@ -476,16 +709,18 @@
     cell.subLabel.text = [NSString stringWithFormat:@"%lu 项", (unsigned long)[self countOf:name]];
     cell.dateLabel.text = [self formatDate:self.dates[name]];
     cell.sizeLabel.text = [self formatSize:[self sizeOf:name]];
-    cell.accessoryType = [self.selected containsObject:name] ? UITableViewCellAccessoryCheckmark
-                                                             : UITableViewCellAccessoryNone;
+    [cell setSelecting:self.selecting checked:[self.selected containsObject:name]];
     return cell;
 }
 
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath
 {
     [tableView deselectRowAtIndexPath:indexPath animated:NO];
-    [self toggleSelection:self.shownItems[indexPath.row]];
-    [tableView reloadRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationNone];
+    if (!self.selecting) return;
+
+    NSString *name = self.shownItems[indexPath.row];
+    [self toggleSelection:name];
+    [self.table reloadData];
     [self refreshSelectionUI];
 }
 
@@ -503,7 +738,7 @@
     cell.nameLabel.text = name;
     cell.countLabel.text = [NSString stringWithFormat:@"%lu 项", (unsigned long)[self countOf:name]];
 
-    BOOL sel = [self.selected containsObject:name];
+    BOOL sel = [self.selected containsObject:name] && self.selecting;
     cell.iconView.tintColor = sel ? [UIColor systemBlueColor] : [UIColor systemTealColor];
     cell.contentView.backgroundColor = sel
         ? [[UIColor systemBlueColor] colorWithAlphaComponent:0.12] : [UIColor clearColor];
@@ -513,8 +748,9 @@
 
 - (void)collectionView:(UICollectionView *)cv didSelectItemAtIndexPath:(NSIndexPath *)indexPath
 {
+    if (!self.selecting) return;
     [self toggleSelection:self.shownItems[indexPath.row]];
-    [cv reloadItemsAtIndexPaths:@[indexPath]];
+    [cv reloadData];
     [self refreshSelectionUI];
 }
 

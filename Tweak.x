@@ -6,6 +6,7 @@
 #import "SettingsPanel.h"
 #import "ResourcePanel.h"
 #import "AboutPanel.h"
+#import <math.h>
 
 #pragma mark - 颜色
 
@@ -131,9 +132,13 @@ static UIColor *ADXDiffColor(int d)
 - (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section
 {
     if (!self.result) return nil;
-    if (section == 0)
-        return [NSString stringWithFormat:@"旧曲 BEST 35 · 合计 %d", self.result.oldSum];
-    return [NSString stringWithFormat:@"新曲 BEST 15 · 合计 %d", self.result.newSum];
+
+    NSArray *list = (section == 0) ? self.result.oldList : self.result.recentList;
+    int sum = (section == 0) ? self.result.oldSum : self.result.newSum;
+    // 折算成“满 50 首”的等效 rating：合计 / 首数 * 50
+    int normalized = list.count ? (int)lround(sum / (double)list.count * 50.0) : 0;
+    NSString *name = (section == 0) ? @"旧曲 BEST 35" : @"新曲 BEST 15";
+    return [NSString stringWithFormat:@"%@ · 合计 %d · 计算后 %d", name, sum, normalized];
 }
 
 - (NSString *)tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section
