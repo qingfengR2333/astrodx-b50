@@ -1,5 +1,6 @@
 // ResourcePanel.m
 #import "ResourcePanel.h"
+#import <math.h>
 
 #pragma mark - 列表单元格
 
@@ -189,10 +190,11 @@
 @property (nonatomic, assign) BOOL selecting;
 @property (nonatomic, assign) BOOL dragging;
 @property (nonatomic, assign) CGPoint dragPoint;
-@property (nonatomic, strong) NSTimer *autoScrollTimer;
-@property (nonatomic, assign) BOOL autoScrollUp;
-@property (nonatomic, assign) BOOL autoScrollDown;
-@property (nonatomic, assign) NSInteger dragStartIndex;
+@property (nonatomic, assign) CGPoint startPoint;
+@property (nonatomic, assign) NSInteger anchorIndex;     // 上一次选到的下标
+@property (nonatomic, strong) CADisplayLink *link;
+@property (nonatomic, assign) CGFloat scrollSpeed;       // 每帧位移
+@property (nonatomic, strong) NSLayoutConstraint *bottomHeight;
 @end
 
 @implementation ADXResourcePanel
@@ -302,7 +304,8 @@
         [self.bottomBar.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor constant:16],
         [self.bottomBar.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor constant:-16],
         [self.bottomBar.bottomAnchor constraintEqualToAnchor:safe.bottomAnchor constant:-10],
-        [self.bottomBar.heightAnchor constraintEqualToConstant:44]
+        self.bottomHeight = [self.bottomBar.heightAnchor constraintEqualToConstant:0],
+        self.bottomHeight
     ]];
 
     UILongPressGestureRecognizer *tablePress =
@@ -317,6 +320,13 @@
 
     [self applySelectModeAppearance];
     [self reloadList];
+}
+
+- (void)viewWillDisappear:(BOOL)animated
+{
+    [super viewWillDisappear:animated];
+    self.dragging = NO;
+    [self stopLink];
 }
 
 - (void)viewDidLayoutSubviews
@@ -354,6 +364,7 @@
     self.navigationItem.rightBarButtonItems = self.selecting
         ? @[self.selectItem, self.selectAllItem]
         : @[self.selectItem];
+    self.bottomHeight.constant = self.selecting ? 44 : 0;
     self.bottomBar.hidden = !self.selecting;
     self.countLabel.hidden = NO;
 }
@@ -363,7 +374,7 @@
     self.selecting = !self.selecting;
     if (!self.selecting) [self.selected removeAllObjects];
     self.dragging = NO;
-    [self stopAutoScroll];
+    [self stopLink];
     [self applySelectModeAppearance];
     [self.table reloadData];
     [self.grid reloadData];
@@ -510,34 +521,131 @@
 
 #pragma mark - 长按拖动选择
 
+/// 手指离上下边缘越近，滚得越快（每帧像素）
+- (CGFloat)speedForPoint:(CGPoint)p inScrollView:(UIScrollView *)sv
+{
+    CGFloat edge = 80;
+    CGFloat h = sv.bounds.size.height;
+    if (p.y < edge) return -((edge - p.y) / edge) * 16.0;
+    if (p.y > h - edge) return ((p.y - (h - edge)) / edge) * 16.0;
+    return 0;
+}
+
+- (void)startLinkIfNeeded
+{
+    if (self.link) return;
+    self.link = [CADisplayLink displayLinkWithTarget:self selector:@selector(stepScroll:)];
+    [self.link addToRunLoop:[NSRunLoop mainRunLoop] forMode:NSRunLoopCommonModes];
+}
+
+- (void)stopLink
+{
+    [self.link invalidate];
+    self.link = nil;
+    self.scrollSpeed = 0;
+}
+
+- (void)stepScroll:(CADisplayLink *)link
+{
+    if (!self.dragging) { [self stopLink]; return; }
+
+    UIScrollView *sv = (self.viewMode == 1) ? self.grid : self.table;
+    if (fabs(self.scrollSpeed) < 0.4) return;
+
+    CGFloat maxY = MAX(0, sv.contentSize.height - sv.bounds.size.height);
+    CGFloat y = MAX(0, MIN(maxY, sv.contentOffset.y + self.scrollSpeed));
+    if (y == sv.contentOffset.y) return;          // 到顶/到底，不再触发
+    [sv setContentOffset:CGPointMake(sv.contentOffset.x, y) animated:NO];
+
+    [self extendSelectionToPoint:self.dragPoint];
+}
+
+/// 把 anchorIndex 到当前手指所在下标的整段都选上，避免滚动时漏选
+- (BOOL)selectRangeToIndex:(NSInteger)idx
+{
+    NSInteger a = MIN(self.anchorIndex, idx);
+    NSInteger b = MAX(self.anchorIndex, idx);
+    BOOL changed = NO;
+    for (NSInteger i = a; i <= b; i++) {
+        if (i < 0 || i >= (NSInteger)self.shownItems.count) continue;
+        NSString *n = self.shownItems[i];
+        if (![self.selected containsObject:n]) {
+            [self.selected addObject:n];
+            changed = YES;
+        }
+    }
+    self.anchorIndex = idx;
+    return changed;
+}
+
+- (void)extendSelectionToPoint:(CGPoint)p
+{
+    BOOL changed = NO;
+    if (self.viewMode == 1) {
+        NSIndexPath *ip = [self.grid indexPathForItemAtPoint:p];
+        if (ip) changed = [self selectRangeToIndex:ip.item];
+    } else {
+        NSIndexPath *ip = [self.table indexPathForRowAtPoint:p];
+        if (ip) changed = [self selectRangeToIndex:ip.row];
+    }
+    if (changed) [self refreshVisibleCells];
+}
+
+/// 只改可见单元格，不 reloadData，滚动时不掉帧
+- (void)refreshVisibleCells
+{
+    if (self.viewMode == 1) {
+        for (ADXGridCell *c in self.grid.visibleCells) {
+            NSIndexPath *ip = [self.grid indexPathForCell:c];
+            if (ip.item < (NSInteger)self.shownItems.count)
+                [self configureGridCell:c name:self.shownItems[ip.item]];
+        }
+    } else {
+        for (ADXResCell *c in self.table.visibleCells) {
+            NSIndexPath *ip = [self.table indexPathForCell:c];
+            if (ip.row < (NSInteger)self.shownItems.count) {
+                NSString *n = self.shownItems[ip.row];
+                [c setSelecting:self.selecting checked:[self.selected containsObject:n]];
+            }
+        }
+    }
+    [self refreshSelectionUI];
+}
+
 - (void)handleTableLongPress:(UILongPressGestureRecognizer *)g
 {
     CGPoint p = [g locationInView:self.table];
 
     if (g.state == UIGestureRecognizerStateBegan) {
-        [self enterSelectionMode];
         NSIndexPath *ip = [self.table indexPathForRowAtPoint:p];
         if (!ip) return;
+
+        [self enterSelectionMode];
+        [self.table reloadData];
+
         self.dragging = YES;
         self.dragPoint = p;
-        self.dragStartIndex = ip.row;
-        [self addToSelection:self.shownItems[ip.row]];
-        [self.table reloadData];
-        [self refreshSelectionUI];
-        [self updateAutoScrollForPoint:p inScrollView:self.table];
+        self.startPoint = p;
+        self.anchorIndex = ip.row;
+        [self.selected addObject:self.shownItems[ip.row]];
+        [self refreshVisibleCells];
+        self.scrollSpeed = 0;                 // 还没拖动，先不滚
     } else if (g.state == UIGestureRecognizerStateChanged) {
         if (!self.dragging) return;
         self.dragPoint = p;
-        NSIndexPath *ip = [self.table indexPathForRowAtPoint:p];
-        if (ip) {
-            [self addToSelection:self.shownItems[ip.row]];
-            [self.table reloadRowsAtIndexPaths:@[ip] withRowAnimation:UITableViewRowAnimationNone];
-            [self refreshSelectionUI];
+
+        BOOL moved = (fabs(p.y - self.startPoint.y) > 6 || fabs(p.x - self.startPoint.x) > 6);
+        if (moved) {
+            NSIndexPath *ip = [self.table indexPathForRowAtPoint:p];
+            if (ip) [self selectRangeToIndex:ip.row];
+            self.scrollSpeed = [self speedForPoint:p inScrollView:self.table];
+            if (self.scrollSpeed != 0) [self startLinkIfNeeded];
+            else [self stopLink];
+            [self refreshVisibleCells];
         }
-        [self updateAutoScrollForPoint:p inScrollView:self.table];
     } else {
         self.dragging = NO;
-        [self stopAutoScroll];
+        [self stopLink];
     }
 }
 
@@ -546,91 +654,36 @@
     CGPoint p = [g locationInView:self.grid];
 
     if (g.state == UIGestureRecognizerStateBegan) {
-        [self enterSelectionMode];
         NSIndexPath *ip = [self.grid indexPathForItemAtPoint:p];
         if (!ip) return;
+
+        [self enterSelectionMode];
+        [self.grid reloadData];
+
         self.dragging = YES;
         self.dragPoint = p;
-        self.dragStartIndex = ip.item;
-        [self addToSelection:self.shownItems[ip.item]];
-        [self.grid reloadData];
-        [self refreshSelectionUI];
-        [self updateAutoScrollForPoint:p inScrollView:self.grid];
+        self.startPoint = p;
+        self.anchorIndex = ip.item;
+        [self.selected addObject:self.shownItems[ip.item]];
+        [self refreshVisibleCells];
+        self.scrollSpeed = 0;
     } else if (g.state == UIGestureRecognizerStateChanged) {
         if (!self.dragging) return;
         self.dragPoint = p;
-        NSIndexPath *ip = [self.grid indexPathForItemAtPoint:p];
-        if (ip) {
-            NSInteger a = MIN(self.dragStartIndex, ip.item);
-            NSInteger b = MAX(self.dragStartIndex, ip.item);
-            for (NSInteger i = a; i <= b && i < (NSInteger)self.shownItems.count; i++)
-                [self addToSelection:self.shownItems[i]];
-            [self.grid reloadData];
-            [self refreshSelectionUI];
+
+        BOOL moved = (fabs(p.y - self.startPoint.y) > 6 || fabs(p.x - self.startPoint.x) > 6);
+        if (moved) {
+            NSIndexPath *ip = [self.grid indexPathForItemAtPoint:p];
+            if (ip) [self selectRangeToIndex:ip.item];
+            self.scrollSpeed = [self speedForPoint:p inScrollView:self.grid];
+            if (self.scrollSpeed != 0) [self startLinkIfNeeded];
+            else [self stopLink];
+            [self refreshVisibleCells];
         }
-        [self updateAutoScrollForPoint:p inScrollView:self.grid];
     } else {
         self.dragging = NO;
-        [self stopAutoScroll];
+        [self stopLink];
     }
-}
-
-- (void)updateAutoScrollForPoint:(CGPoint)p inScrollView:(UIScrollView *)sv
-{
-    CGFloat edge = 70;
-    self.autoScrollUp = (p.y < edge);
-    self.autoScrollDown = (p.y > sv.bounds.size.height - edge);
-
-    if (self.autoScrollUp || self.autoScrollDown) {
-        if (!self.autoScrollTimer) {
-            self.autoScrollTimer =
-                [NSTimer scheduledTimerWithTimeInterval:0.04 target:self
-                                               selector:@selector(autoScrollTick)
-                                               userInfo:nil repeats:YES];
-        }
-    } else {
-        [self stopAutoScroll];
-    }
-}
-
-- (void)stopAutoScroll
-{
-    [self.autoScrollTimer invalidate];
-    self.autoScrollTimer = nil;
-    self.autoScrollUp = NO;
-    self.autoScrollDown = NO;
-}
-
-- (void)autoScrollTick
-{
-    if (!self.dragging) { [self stopAutoScroll]; return; }
-
-    UIScrollView *sv = (self.viewMode == 1) ? self.grid : self.table;
-    CGFloat dy = self.autoScrollUp ? -9 : (self.autoScrollDown ? 9 : 0);
-    if (dy == 0) return;
-
-    CGPoint off = sv.contentOffset;
-    CGFloat maxY = MAX(0, sv.contentSize.height - sv.bounds.size.height);
-    off.y = MAX(0, MIN(maxY, off.y + dy));
-    [sv setContentOffset:off animated:NO];
-
-    if (self.viewMode == 1) {
-        NSIndexPath *ip = [self.grid indexPathForItemAtPoint:self.dragPoint];
-        if (ip) {
-            NSInteger a = MIN(self.dragStartIndex, ip.item);
-            NSInteger b = MAX(self.dragStartIndex, ip.item);
-            for (NSInteger i = a; i <= b && i < (NSInteger)self.shownItems.count; i++)
-                [self addToSelection:self.shownItems[i]];
-            [self.grid reloadData];
-        }
-    } else {
-        NSIndexPath *ip = [self.table indexPathForRowAtPoint:self.dragPoint];
-        if (ip) {
-            [self addToSelection:self.shownItems[ip.row]];
-            [self.table reloadRowsAtIndexPaths:@[ip] withRowAnimation:UITableViewRowAnimationNone];
-        }
-    }
-    [self refreshSelectionUI];
 }
 
 #pragma mark - 视图切换 / 排序菜单
@@ -734,15 +787,7 @@
 - (UICollectionViewCell *)collectionView:(UICollectionView *)cv cellForItemAtIndexPath:(NSIndexPath *)indexPath
 {
     ADXGridCell *cell = [cv dequeueReusableCellWithReuseIdentifier:@"grid" forIndexPath:indexPath];
-    NSString *name = self.shownItems[indexPath.row];
-    cell.nameLabel.text = name;
-    cell.countLabel.text = [NSString stringWithFormat:@"%lu 项", (unsigned long)[self countOf:name]];
-
-    BOOL sel = [self.selected containsObject:name] && self.selecting;
-    cell.iconView.tintColor = sel ? [UIColor systemBlueColor] : [UIColor systemTealColor];
-    cell.contentView.backgroundColor = sel
-        ? [[UIColor systemBlueColor] colorWithAlphaComponent:0.12] : [UIColor clearColor];
-    cell.contentView.layer.cornerRadius = 10;
+    [self configureGridCell:cell name:self.shownItems[indexPath.row]];
     return cell;
 }
 
@@ -752,6 +797,18 @@
     [self toggleSelection:self.shownItems[indexPath.row]];
     [cv reloadData];
     [self refreshSelectionUI];
+}
+
+- (void)configureGridCell:(ADXGridCell *)cell name:(NSString *)name
+{
+    cell.nameLabel.text = name;
+    cell.countLabel.text = [NSString stringWithFormat:@"%lu 项", (unsigned long)[self countOf:name]];
+
+    BOOL sel = self.selecting && [self.selected containsObject:name];
+    cell.iconView.tintColor = sel ? [UIColor systemBlueColor] : [UIColor systemTealColor];
+    cell.contentView.backgroundColor = sel
+        ? [[UIColor systemBlueColor] colorWithAlphaComponent:0.12] : [UIColor clearColor];
+    cell.contentView.layer.cornerRadius = 10;
 }
 
 - (void)toggleSelection:(NSString *)name
