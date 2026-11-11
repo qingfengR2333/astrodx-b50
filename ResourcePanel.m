@@ -189,8 +189,8 @@
 
 @property (nonatomic, assign) BOOL selecting;
 @property (nonatomic, assign) BOOL dragging;
-@property (nonatomic, assign) CGPoint dragPoint;
-@property (nonatomic, assign) CGPoint startPoint;
+@property (nonatomic, assign) CGPoint dragPointView;   // 手指位置（self.view 坐标）
+@property (nonatomic, assign) CGPoint startPointView;
 @property (nonatomic, assign) NSInteger anchorIndex;     // 上一次选到的下标
 @property (nonatomic, strong) CADisplayLink *link;
 @property (nonatomic, assign) CGFloat scrollSpeed;       // 每帧位移
@@ -521,13 +521,24 @@
 
 #pragma mark - 长按拖动选择
 
-/// 手指离上下边缘越近，滚得越快（每帧像素）
-- (CGFloat)speedForPoint:(CGPoint)p inScrollView:(UIScrollView *)sv
+/// 手指离滚动视图上下边缘越近，每帧滚得越快（坐标用 self.view，不能用内容坐标）
+- (CGFloat)speedForScreenPoint:(CGPoint)pv inScrollView:(UIScrollView *)sv
 {
+    if (!sv.window) return 0;
+
+    CGRect r = [self.view convertRect:sv.bounds fromView:sv];
+    CGFloat top = CGRectGetMinY(r);
+    CGFloat bottom = CGRectGetMaxY(r);
     CGFloat edge = 80;
-    CGFloat h = sv.bounds.size.height;
-    if (p.y < edge) return -((edge - p.y) / edge) * 16.0;
-    if (p.y > h - edge) return ((p.y - (h - edge)) / edge) * 16.0;
+
+    if (pv.y < top + edge) {
+        CGFloat k = (top + edge - pv.y) / edge;      // 0~1
+        return -MIN(1.0, k) * 16.0;
+    }
+    if (pv.y > bottom - edge) {
+        CGFloat k = (pv.y - (bottom - edge)) / edge;
+        return MIN(1.0, k) * 16.0;
+    }
     return 0;
 }
 
@@ -535,6 +546,8 @@
 {
     if (self.link) return;
     self.link = [CADisplayLink displayLinkWithTarget:self selector:@selector(stepScroll:)];
+    if ([self.link respondsToSelector:@selector(setPreferredFramesPerSecond:)])
+        self.link.preferredFramesPerSecond = 60;      // ProMotion 上固定 60fps，速度才一致
     [self.link addToRunLoop:[NSRunLoop mainRunLoop] forMode:NSRunLoopCommonModes];
 }
 
@@ -548,19 +561,18 @@
 - (void)stepScroll:(CADisplayLink *)link
 {
     if (!self.dragging) { [self stopLink]; return; }
-
-    UIScrollView *sv = (self.viewMode == 1) ? self.grid : self.table;
     if (fabs(self.scrollSpeed) < 0.4) return;
 
+    UIScrollView *sv = (self.viewMode == 1) ? self.grid : self.table;
     CGFloat maxY = MAX(0, sv.contentSize.height - sv.bounds.size.height);
     CGFloat y = MAX(0, MIN(maxY, sv.contentOffset.y + self.scrollSpeed));
-    if (y == sv.contentOffset.y) return;          // 到顶/到底，不再触发
+    if (fabs(y - sv.contentOffset.y) < 0.01) return;      // 到顶/到底
     [sv setContentOffset:CGPointMake(sv.contentOffset.x, y) animated:NO];
 
-    [self extendSelectionToPoint:self.dragPoint];
+    [self extendSelectionToScreenPoint:self.dragPointView];
 }
 
-/// 把 anchorIndex 到当前手指所在下标的整段都选上，避免滚动时漏选
+/// 把 anchorIndex → idx 的整段都选上（滚动再快也不会漏行）
 - (BOOL)selectRangeToIndex:(NSInteger)idx
 {
     NSInteger a = MIN(self.anchorIndex, idx);
@@ -578,8 +590,11 @@
     return changed;
 }
 
-- (void)extendSelectionToPoint:(CGPoint)p
+- (void)extendSelectionToScreenPoint:(CGPoint)pv
 {
+    UIScrollView *sv = (self.viewMode == 1) ? self.grid : self.table;
+    CGPoint p = [self.view convertPoint:pv toView:sv];
+
     BOOL changed = NO;
     if (self.viewMode == 1) {
         NSIndexPath *ip = [self.grid indexPathForItemAtPoint:p];
@@ -591,7 +606,7 @@
     if (changed) [self refreshVisibleCells];
 }
 
-/// 只改可见单元格，不 reloadData，滚动时不掉帧
+/// 只改可见单元格，不 reloadData
 - (void)refreshVisibleCells
 {
     if (self.viewMode == 1) {
@@ -614,35 +629,38 @@
 
 - (void)handleTableLongPress:(UILongPressGestureRecognizer *)g
 {
-    CGPoint p = [g locationInView:self.table];
+    CGPoint pv = [g locationInView:self.view];
+    CGPoint pt = [self.view convertPoint:pv toView:self.table];
 
     if (g.state == UIGestureRecognizerStateBegan) {
-        NSIndexPath *ip = [self.table indexPathForRowAtPoint:p];
+        NSIndexPath *ip = [self.table indexPathForRowAtPoint:pt];
         if (!ip) return;
 
         [self enterSelectionMode];
         [self.table reloadData];
 
         self.dragging = YES;
-        self.dragPoint = p;
-        self.startPoint = p;
+        self.dragPointView = pv;
+        self.startPointView = pv;
         self.anchorIndex = ip.row;
         [self.selected addObject:self.shownItems[ip.row]];
         [self refreshVisibleCells];
-        self.scrollSpeed = 0;                 // 还没拖动，先不滚
+        self.scrollSpeed = 0;
     } else if (g.state == UIGestureRecognizerStateChanged) {
         if (!self.dragging) return;
-        self.dragPoint = p;
+        self.dragPointView = pv;
 
-        BOOL moved = (fabs(p.y - self.startPoint.y) > 6 || fabs(p.x - self.startPoint.x) > 6);
-        if (moved) {
-            NSIndexPath *ip = [self.table indexPathForRowAtPoint:p];
-            if (ip) [self selectRangeToIndex:ip.row];
-            self.scrollSpeed = [self speedForPoint:p inScrollView:self.table];
-            if (self.scrollSpeed != 0) [self startLinkIfNeeded];
-            else [self stopLink];
-            [self refreshVisibleCells];
-        }
+        BOOL moved = (fabs(pv.y - self.startPointView.y) > 6 || fabs(pv.x - self.startPointView.x) > 6);
+        if (!moved) return;
+
+        NSIndexPath *ip = [self.table indexPathForRowAtPoint:pt];
+        if (ip) [self selectRangeToIndex:ip.row];
+
+        self.scrollSpeed = [self speedForScreenPoint:pv inScrollView:self.table];
+        if (self.scrollSpeed != 0) [self startLinkIfNeeded];
+        else [self stopLink];
+
+        [self refreshVisibleCells];
     } else {
         self.dragging = NO;
         [self stopLink];
@@ -651,35 +669,38 @@
 
 - (void)handleGridLongPress:(UILongPressGestureRecognizer *)g
 {
-    CGPoint p = [g locationInView:self.grid];
+    CGPoint pv = [g locationInView:self.view];
+    CGPoint pt = [self.view convertPoint:pv toView:self.grid];
 
     if (g.state == UIGestureRecognizerStateBegan) {
-        NSIndexPath *ip = [self.grid indexPathForItemAtPoint:p];
+        NSIndexPath *ip = [self.grid indexPathForItemAtPoint:pt];
         if (!ip) return;
 
         [self enterSelectionMode];
         [self.grid reloadData];
 
         self.dragging = YES;
-        self.dragPoint = p;
-        self.startPoint = p;
+        self.dragPointView = pv;
+        self.startPointView = pv;
         self.anchorIndex = ip.item;
         [self.selected addObject:self.shownItems[ip.item]];
         [self refreshVisibleCells];
         self.scrollSpeed = 0;
     } else if (g.state == UIGestureRecognizerStateChanged) {
         if (!self.dragging) return;
-        self.dragPoint = p;
+        self.dragPointView = pv;
 
-        BOOL moved = (fabs(p.y - self.startPoint.y) > 6 || fabs(p.x - self.startPoint.x) > 6);
-        if (moved) {
-            NSIndexPath *ip = [self.grid indexPathForItemAtPoint:p];
-            if (ip) [self selectRangeToIndex:ip.item];
-            self.scrollSpeed = [self speedForPoint:p inScrollView:self.grid];
-            if (self.scrollSpeed != 0) [self startLinkIfNeeded];
-            else [self stopLink];
-            [self refreshVisibleCells];
-        }
+        BOOL moved = (fabs(pv.y - self.startPointView.y) > 6 || fabs(pv.x - self.startPointView.x) > 6);
+        if (!moved) return;
+
+        NSIndexPath *ip = [self.grid indexPathForItemAtPoint:pt];
+        if (ip) [self selectRangeToIndex:ip.item];
+
+        self.scrollSpeed = [self speedForScreenPoint:pv inScrollView:self.grid];
+        if (self.scrollSpeed != 0) [self startLinkIfNeeded];
+        else [self stopLink];
+
+        [self refreshVisibleCells];
     } else {
         self.dragging = NO;
         [self stopLink];
