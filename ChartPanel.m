@@ -234,6 +234,21 @@ static UIColor *DiffColor(NSInteger d)
     [self rebuildDetail];
 }
 
+- (void)showSongById:(int)songId
+{
+    NSArray *s = [ADXChartDb songById:songId];
+    if (!s) return;
+
+    self.hits = @[];
+    [self.suggest reloadData];
+    [self.search resignFirstResponder];
+    self.search.text = s[1];
+
+    [self showSong:s];
+    [self refreshVisibility];
+    [self.detail setContentOffset:CGPointZero animated:NO];
+}
+
 - (void)rebuildDetail
 {
     for (UIView *v in [self.detail.subviews copy]) [v removeFromSuperview];

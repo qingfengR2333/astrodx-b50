@@ -9,6 +9,9 @@
 /// 关键词搜索，最多 limit 条
 + (NSArray *)search:(NSString *)keyword limit:(NSUInteger)limit;
 
+/// 按编号取曲目（基础号与 DX 号都能命中），取不到返回 nil
++ (NSArray *)songById:(int)songId;
+
 /// 是否有 DX 谱面
 + (BOOL)hasDx:(NSArray *)song;
 

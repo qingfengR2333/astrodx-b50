@@ -174,6 +174,21 @@ enum {
     return out;
 }
 
+/// 按编号取曲目（基础号、DX 号都能命中），B50 表里点进详情用
++ (NSArray *)songById:(int)songId
+{
+    if (songId <= 0) return nil;
+
+    NSArray *songs = [self db][@"s"];
+    long long n = songId;
+    for (NSArray *s in songs) {
+        if (s.count <= ADXSongDx) continue;
+        long long sid = [s[ADXSongId] longLongValue];
+        if (sid == n || sid == n - 10000 || sid == n + 10000) return s;
+    }
+    return nil;
+}
+
 + (BOOL)hasDx:(NSArray *)song
 {
     NSArray *dx = song[ADXSongDx];

@@ -7,6 +7,7 @@
 #import "ResourcePanel.h"
 #import "AboutPanel.h"
 #import "ChartPanel.h"
+#import "ChartDb.h"
 #import <math.h>
 
 #pragma mark - 颜色
@@ -206,6 +207,8 @@ static UIColor *ADXDiffColor(int d)
         cell.detailTextLabel.text = self.loading ? @"" : self.errorText;
         cell.detailTextLabel.textColor = [UIColor secondaryLabelColor];
         cell.detailTextLabel.numberOfLines = 0;
+        cell.accessoryType = UITableViewCellAccessoryNone;
+        cell.selectionStyle = UITableViewCellSelectionStyleNone;
         return cell;
     }
 
@@ -220,8 +223,26 @@ static UIColor *ADXDiffColor(int d)
     cell.detailTextLabel.text = [NSString stringWithFormat:@"定数 %.1f · %@ · %@ · RA %d",
                                  e.ds, e.level, [NSString stringWithFormat:@"%.4f%%", e.rate], e.rating];
     cell.detailTextLabel.textColor = ADXDiffColor(e.diffId);
-    cell.selectionStyle = UITableViewCellSelectionStyleNone;
+    cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+    cell.selectionStyle = UITableViewCellSelectionStyleDefault;
     return cell;
+}
+
+- (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath
+{
+    [tableView deselectRowAtIndexPath:indexPath animated:YES];
+    if (!self.result) return;
+
+    NSArray *list = indexPath.section == 0 ? self.result.oldList : self.result.recentList;
+    ADXEntry *e = list[indexPath.row];
+
+    // 自制谱 / 宴会场不在曲库里，点不进详情
+    if (![ADXChartDb songById:e.songId]) return;
+
+    // 切到「谱面查询」并直接展示这首歌的详情
+    self.seg.selectedSegmentIndex = 1;
+    [self segmentChanged];
+    [self.chart showSongById:e.songId];
 }
 
 - (void)shareFile:(NSString *)path
