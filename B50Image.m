@@ -34,20 +34,52 @@ static UIColor *Pink(void)     { return RGB(226, 74, 125); }  // #E24A7D
 static UIColor *PageBg(void)   { return RGB(243, 240, 251); }
 static UIColor *PageBgTop(void){ return RGB(232, 226, 250); }
 
-// 难度徽章配色（只有徽章随难度变色，卡片底色不变）
+// ===== 难度配色 =====
+// (1) 卡片主背景：绿 / 黄 / 红 / 紫 / 白
+static void CardBG(int d, UIColor **top, UIColor **bot)
+{
+    switch (d) {
+        case 2:  *top = RGB(46, 88, 60);      *bot = RGB(36, 72, 48);     return; // BASIC     深绿
+        case 3:  *top = RGB(110, 88, 34);     *bot = RGB(90, 70, 26);     return; // ADVANCED  深黄
+        case 4:  *top = RGB(124, 46, 54);     *bot = RGB(102, 36, 44);    return; // EXPERT    深红
+        case 6:  *top = RGB(236, 236, 244);   *bot = RGB(220, 220, 232);  return; // RE:MASTER 白
+        default: *top = CardTop();            *bot = CardBot();           return; // MASTER    深紫（不变）
+    }
+}
+
+// 主背景上的文字：白卡用深灰，其余用白
+static UIColor *CardInk(int d) { return (d == 6) ? RGB(52, 50, 66) : [UIColor whiteColor]; }
+
+// 定数小字：跟主色同色系，避免紫灰压在绿/黄/红上发脏
+static UIColor *CardSub(int d)
+{
+    switch (d) {
+        case 2: return RGB(198, 228, 206);
+        case 3: return RGB(238, 226, 190);
+        case 4: return RGB(240, 202, 202);
+        case 6: return RGB(112, 110, 132);
+        default: return Muted();
+    }
+}
+
+// 单曲 rating：深色卡片用金；白卡上换深一点的金，否则糊成一片
+static UIColor *CardRating(int d) { return (d == 6) ? RGB(198, 146, 20) : Gold(); }
+
+// (2) 难度小徽章：与主背景拉开明度差（深底配亮徽章 / 白底配深徽章）
 static UIColor *BadgeFill(int d)
 {
     switch (d) {
-        case 2: return RGB(76, 175, 88);     // BASIC 绿
-        case 3: return RGB(230, 179, 45);    // ADVANCED 黄
-        case 4: return RGB(214, 72, 74);     // EXPERT 红
-        case 5: return RGB(156, 92, 214);    // MASTER 紫
-        case 6: return RGB(238, 238, 246);   // RE:MASTER 白
+        case 2: return RGB(150, 224, 168);   // BASIC     亮绿
+        case 3: return RGB(245, 210, 110);   // ADVANCED  亮黄
+        case 4: return RGB(245, 138, 138);   // EXPERT    亮红
+        case 5: return RGB(156, 92, 214);    // MASTER    紫
+        case 6: return RGB(86, 84, 110);     // RE:MASTER 深灰
         default: return RGB(150, 140, 178);
     }
 }
 
-static BOOL BadgeUsesDarkText(int d) { return d == 6; }
+// 亮底徽章用深字，深底徽章用白字
+static BOOL BadgeUsesDarkText(int d) { return d == 2 || d == 3 || d == 4; }
 
 // 圆角条内文字的纵向视觉居中：拉丁按大写字高、中文按 0.88em 字形高度对齐
 static CGFloat BarTextY(CGFloat barY, CGFloat barH, UIFont *f, BOOL cjk)
@@ -313,12 +345,15 @@ static void FillRoundGradient(CGRect r, CGFloat radius, UIColor *top, UIColor *b
 
 + (void)drawCard:(ADXEntry *)e in:(CGRect)card coverDir:(NSString *)dir
 {
+    int d = e.diffId;
     CGContextRef cg = UIGraphicsGetCurrentContext();
     // 必须保存/恢复图形状态：addClip 会一直生效
     CGContextSaveGState(cg);
 
-    // 统一深紫渐变底，无边框
-    FillRoundGradient(card, 10, CardTop(), CardBot());
+    // 主背景按难度取色（深紫 / 深绿 / 深黄 / 深红 / 白），无边框
+    UIColor *bgTop = nil, *bgBot = nil;
+    CardBG(e.diffId, &bgTop, &bgBot);
+    FillRoundGradient(card, 10, bgTop, bgBot);
 
     UIBezierPath *path = [UIBezierPath bezierPathWithRoundedRect:card cornerRadius:10];
     [path addClip];
@@ -339,7 +374,7 @@ static void FillRoundGradient(CGRect r, CGFloat radius, UIColor *top, UIColor *b
                               img.size.width * s, img.size.height * s);
         [img drawInRect:r];
     } else {
-        [RGB(52, 42, 80) setFill];
+        [((d == 6) ? RGB(228, 228, 238) : RGB(52, 42, 80)) setFill];
         UIRectFill(coverRect);
         NSString *ch = e.title.length ? [e.title substringToIndex:1] : @"?";
         UIFont *cf = [UIFont boldSystemFontOfSize:34.0];
@@ -347,7 +382,8 @@ static void FillRoundGradient(CGRect r, CGFloat radius, UIColor *top, UIColor *b
         [ch drawAtPoint:CGPointMake(CGRectGetMidX(coverRect) - cs.width / 2,
                                     CGRectGetMidY(coverRect) - cs.height / 2)
          withAttributes:@{NSFontAttributeName: cf,
-                          NSForegroundColorAttributeName: RGB(150, 140, 190)}];
+                          NSForegroundColorAttributeName: ((d == 6) ? RGB(150, 148, 172)
+                                                                     : RGB(150, 140, 190))}];
     }
     CGContextRestoreGState(cg);
 
@@ -366,7 +402,7 @@ static void FillRoundGradient(CGRect r, CGFloat radius, UIColor *top, UIColor *b
     ps.maximumLineHeight = 19;
     UIFont *titleFont = [UIFont boldSystemFontOfSize:15.0];
     NSDictionary *titleAttr = @{NSFontAttributeName: titleFont,
-                                NSForegroundColorAttributeName: [UIColor whiteColor],
+                                NSForegroundColorAttributeName: CardInk(d),
                                 NSParagraphStyleAttributeName: ps};
     [e.title drawInRect:CGRectMake(card.origin.x + 80, card.origin.y + 8, tw, 40)
          withAttributes:titleAttr];
@@ -375,24 +411,24 @@ static void FillRoundGradient(CGRect r, CGFloat radius, UIColor *top, UIColor *b
     NSString *lvl = e.level.length ? e.level : @"?";
     UIFont *bf = [UIFont boldSystemFontOfSize:12.0];
     CGFloat bw = MAX(30, [lvl sizeWithAttributes:@{NSFontAttributeName: bf}].width + 14);
-    BOOL darkBadge = BadgeUsesDarkText(e.diffId);
+    BOOL darkBadge = BadgeUsesDarkText(d);
     FillRound(CGRectMake(card.origin.x + 8, card.origin.y + 82, bw, 17), 5,
-              BadgeFill(e.diffId), nil, 0);
+              BadgeFill(d), nil, 0);
     CGSize ls = [lvl sizeWithAttributes:@{NSFontAttributeName: bf}];
     [lvl drawAtPoint:CGPointMake(card.origin.x + 8 + (bw - ls.width) / 2, card.origin.y + 83)
       withAttributes:@{NSFontAttributeName: bf,
-                       NSForegroundColorAttributeName: darkBadge ? RGB(70, 68, 84) : [UIColor whiteColor]}];
+                       NSForegroundColorAttributeName: darkBadge ? RGB(46, 52, 44) : [UIColor whiteColor]}];
 
     [[NSString stringWithFormat:@"%.1f", e.ds] drawAtPoint:CGPointMake(card.origin.x + 8 + bw + 8,
                                                                      card.origin.y + 84)
         withAttributes:@{NSFontAttributeName: [UIFont systemFontOfSize:14.0],
-                         NSForegroundColorAttributeName: Muted()}];
+                         NSForegroundColorAttributeName: CardSub(d)}];
 
-    // ---- 达成率（白，粗） ----
+    // ---- 达成率（粗体，颜色跟主背景走） ----
     [[NSString stringWithFormat:@"%.4f%%", e.rate] drawAtPoint:CGPointMake(card.origin.x + 8,
                                                                          card.origin.y + 97)
         withAttributes:@{NSFontAttributeName: [UIFont boldSystemFontOfSize:21.0],
-                         NSForegroundColorAttributeName: [UIColor whiteColor]}];
+                         NSForegroundColorAttributeName: CardInk(d)}];
 
     // ---- 单曲 Rating（金色，右对齐） ----
     NSMutableParagraphStyle *psRt = [NSMutableParagraphStyle new];
@@ -400,7 +436,7 @@ static void FillRoundGradient(CGRect r, CGFloat radius, UIColor *top, UIColor *b
     NSString *ra = [NSString stringWithFormat:@"%d", e.rating];
     [ra drawInRect:CGRectMake(card.origin.x + 8, card.origin.y + 95, kCardW - 16, 30)
         withAttributes:@{NSFontAttributeName: [UIFont boldSystemFontOfSize:23.0],
-                         NSForegroundColorAttributeName: Gold(),
+                         NSForegroundColorAttributeName: CardRating(d),
                          NSParagraphStyleAttributeName: psRt}];
 
     CGContextRestoreGState(cg);
