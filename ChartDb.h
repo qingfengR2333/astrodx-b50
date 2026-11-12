@@ -1,0 +1,26 @@
+// ChartDb.h — 内置曲库（来自 lxns 舞萌曲库），支持按编号 / 曲名 / 艺术家 / 别名搜索
+#import <Foundation/Foundation.h>
+
+@interface ADXChartDb : NSObject
+
+/// 全部曲目。每首是 NSArray：id、曲名、艺术家、分类下标、BPM、版本码、发布年、别名、标准谱面、DX 谱面
++ (NSArray *)songs;
+
+/// 关键词搜索，最多 limit 条
++ (NSArray *)search:(NSString *)keyword limit:(NSUInteger)limit;
+
+/// 是否有 DX 谱面
++ (BOOL)hasDx:(NSArray *)song;
+
+/// 玩家习惯的编号：有 DX 谱面时是 10000 + 基础号（WIPE OUT MEMORIES → 11391）
++ (int)displayId:(NSArray *)song;
+
++ (NSString *)genreName:(NSArray *)song;
+
+/// 「舞萌DX 2024」这种版本名
++ (NSString *)versionName:(NSArray *)song;
+
+/// 某一边的谱面，按难度从高到低：每项是 [难度 0-4, 定数, 谱师]
++ (NSArray *)chartsOf:(NSArray *)song dx:(BOOL)dx;
+
+@end

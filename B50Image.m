@@ -121,6 +121,18 @@ static void FillRoundGradient(CGRect r, CGFloat radius, UIColor *top, UIColor *b
     return [dir stringByAppendingPathComponent:[NSString stringWithFormat:@"%05d.png", sid]];
 }
 
++ (UIImage *)coverImageFor:(int)songId dir:(NSString *)dir
+{
+    if (songId <= 0 || !dir.length) return nil;
+
+    NSString *path = [self coverPath:dir songId:songId];
+    UIImage *img = [UIImage imageWithContentsOfFile:path];
+    if (img) return img;
+
+    if (![self downloadCover:songId to:dir]) return nil;
+    return [UIImage imageWithContentsOfFile:path];
+}
+
 + (BOOL)downloadCover:(int)sid to:(NSString *)dir
 {
     NSFileManager *fm = [NSFileManager defaultManager];

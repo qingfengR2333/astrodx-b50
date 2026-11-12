@@ -6,6 +6,7 @@
 #import "SettingsPanel.h"
 #import "ResourcePanel.h"
 #import "AboutPanel.h"
+#import "ChartPanel.h"
 #import <math.h>
 
 #pragma mark - 颜色
@@ -24,26 +25,73 @@ static UIColor *ADXDiffColor(int d)
 
 #pragma mark - B50 面板
 
-@interface ADXB50Panel : UITableViewController
+@interface ADXB50Panel : UIViewController <UITableViewDataSource, UITableViewDelegate>
 @property (nonatomic, strong) ADXB50Result *result;
 @property (nonatomic, assign) BOOL loading;
 @property (nonatomic, copy) NSString *errorText;
+@property (nonatomic, strong) UISegmentedControl *seg;
+@property (nonatomic, strong) UITableView *table;
+@property (nonatomic, strong) ADXChartPanel *chart;
 @end
 
 @implementation ADXB50Panel
 
 - (instancetype)init
 {
-    self = [super initWithStyle:UITableViewStyleInsetGrouped];
-    if (self) self.title = @"B50成绩图";
+    self = [super init];
+    if (self) self.title = @"B50列表";
     return self;
 }
 
 - (void)viewDidLoad
 {
     [super viewDidLoad];
+    self.view.backgroundColor = [UIColor systemGroupedBackgroundColor];
+
+    self.seg = [[UISegmentedControl alloc] initWithItems:@[@"B50成绩", @"谱面查询"]];
+    self.seg.selectedSegmentIndex = 0;
+    [self.seg addTarget:self action:@selector(segmentChanged) forControlEvents:UIControlEventValueChanged];
+    [self.view addSubview:self.seg];
+
+    self.table = [[UITableView alloc] initWithFrame:CGRectZero style:UITableViewStyleInsetGrouped];
+    self.table.dataSource = self;
+    self.table.delegate = self;
+    self.table.backgroundColor = [UIColor clearColor];
+    self.table.contentInsetAdjustmentBehavior = UIScrollViewContentInsetAdjustmentNever;
+    [self.view addSubview:self.table];
+
+    self.chart = [[ADXChartPanel alloc] initWithFrame:CGRectZero];
+    self.chart.coverDir = [[NSHomeDirectory() stringByAppendingPathComponent:@"Documents"]
+                           stringByAppendingPathComponent:@"covers"];
+    self.chart.hidden = YES;
+    [self.view addSubview:self.chart];
+
     // 导航栏按钮由 ADXRuntime 的 rebuildB50Items 统一生成（受设置里的开关控制）
     [self reloadData];
+}
+
+- (void)viewDidLayoutSubviews
+{
+    [super viewDidLayoutSubviews];
+
+    CGFloat W = self.view.bounds.size.width;
+    CGFloat top = self.view.safeAreaInsets.top + 6;
+
+    self.seg.frame = CGRectMake(16, top, W - 32, 32);
+
+    CGFloat y = top + 32 + 6;
+    CGFloat h = self.view.bounds.size.height - y - self.view.safeAreaInsets.bottom;
+    CGRect area = CGRectMake(0, y, W, MAX(0, h));
+    self.table.frame = area;
+    self.chart.frame = area;
+}
+
+- (void)segmentChanged
+{
+    BOOL chart = (self.seg.selectedSegmentIndex == 1);
+    self.table.hidden = chart;
+    self.chart.hidden = !chart;
+    if (!chart) [self.table reloadData];
 }
 
 - (void)exportImage
@@ -51,7 +99,7 @@ static UIColor *ADXDiffColor(int d)
     if (!self.result) return;
 
     NSString *oldTitle = self.title;
-    self.title = @"B50成绩图 · 生成中…";
+    self.title = @"B50列表 · 生成中…";
     for (UIBarButtonItem *b in self.navigationItem.rightBarButtonItems) b.enabled = NO;
 
     NSString *docs = [NSHomeDirectory() stringByAppendingPathComponent:@"Documents"];
@@ -90,8 +138,8 @@ static UIColor *ADXDiffColor(int d)
     self.loading = YES;
     self.errorText = nil;
     self.result = nil;
-    [self.tableView reloadData];
-    self.title = @"B50成绩图 · 读取中…";
+    [self.table reloadData];
+    self.title = @"B50列表 · 读取中…";
 
     NSString *docs = [NSHomeDirectory() stringByAppendingPathComponent:@"Documents"];
     NSString *cachePath = [docs stringByAppendingPathComponent:@"cache"];
@@ -108,12 +156,12 @@ static UIColor *ADXDiffColor(int d)
             self.loading = NO;
             if (err) {
                 self.errorText = err.localizedDescription;
-                self.title = @"B50成绩图 · 失败";
+                self.title = @"B50列表 · 失败";
             } else {
                 self.result = res;
-                self.title = [NSString stringWithFormat:@"B50成绩图 · %d", res.total];
+                self.title = [NSString stringWithFormat:@"B50列表 · %d", res.total];
             }
-            [self.tableView reloadData];
+            [self.table reloadData];
         });
     });
 }
@@ -424,7 +472,7 @@ static UINavigationController *gB50Nav;
 
     ADXB50Panel *b50 = [ADXB50Panel new];
     UINavigationController *navB50 = [[UINavigationController alloc] initWithRootViewController:b50];
-    navB50.tabBarItem = [[UITabBarItem alloc] initWithTitle:@"B50成绩图"
+    navB50.tabBarItem = [[UITabBarItem alloc] initWithTitle:@"B50列表"
                                                       image:[UIImage systemImageNamed:@"chart.bar.fill"]
                                                         tag:0];
 

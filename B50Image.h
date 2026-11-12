@@ -10,4 +10,8 @@
         toPath:(NSString *)path
     completion:(void (^)(UIImage *image, NSError *error))completion;
 
+/// 取曲绘：本地没有就按 diving-fish 的规则（先原号再 +10000）下载一次。
+/// 会阻塞当前线程，别在主线程调。
++ (UIImage *)coverImageFor:(int)songId dir:(NSString *)dir;
+
 @end
