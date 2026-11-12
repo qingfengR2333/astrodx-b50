@@ -261,8 +261,8 @@ static UIColor *DiffColor(NSInteger d)
     CGFloat tx = x + 8 + coverSide + 14;
     CGFloat tw = W - coverSide - 22;
 
-    UILabel *no = [[UILabel alloc] initWithFrame:CGRectMake(tx, y + 2, 96, 22)];
-    no.text = [NSString stringWithFormat:@"  No.%d  ", [ADXChartDb displayId:song]];
+    UILabel *no = [[UILabel alloc] initWithFrame:CGRectZero];
+    no.text = [NSString stringWithFormat:@"No.%d", [ADXChartDb displayId:song]];
     no.font = [UIFont systemFontOfSize:12 weight:UIFontWeightSemibold];
     no.textColor = [UIColor secondaryLabelColor];
     no.textAlignment = NSTextAlignmentCenter;
@@ -270,7 +270,7 @@ static UIColor *DiffColor(NSInteger d)
     no.layer.cornerRadius = 11;
     no.layer.masksToBounds = YES;
     [no sizeToFit];
-    no.frame = CGRectMake(tx, y + 2, no.bounds.size.width, 22);
+    no.frame = CGRectMake(tx, y + 2, no.bounds.size.width + 26, 22);
     [self.detail addSubview:no];
 
     UILabel *title = [[UILabel alloc] initWithFrame:CGRectMake(tx, y + 28, tw, 46)];
@@ -360,8 +360,8 @@ static UIColor *DiffColor(NSInteger d)
         [self.detail addSubview:seg];
         y += 38;
     } else {
-        UILabel *tag = [[UILabel alloc] initWithFrame:CGRectMake(x + 8, y, 60, 22)];
-        tag.text = [NSString stringWithFormat:@"  %@  ", hasDx ? @"DX" : @"标准"];
+        UILabel *tag = [[UILabel alloc] initWithFrame:CGRectZero];
+        tag.text = hasDx ? @"DX" : @"标准";
         tag.font = [UIFont systemFontOfSize:12 weight:UIFontWeightSemibold];
         tag.textColor = [UIColor whiteColor];
         tag.backgroundColor = hasDx ? ARGB(214, 74, 88) : [UIColor systemBlueColor];
@@ -369,7 +369,7 @@ static UIColor *DiffColor(NSInteger d)
         tag.layer.cornerRadius = 11;
         tag.layer.masksToBounds = YES;
         [tag sizeToFit];
-        CGFloat tagW = tag.bounds.size.width;
+        CGFloat tagW = tag.bounds.size.width + 28;   // 左右各留 14，不用空格撑宽（空格会被裁掉导致偏右）
         tag.frame = CGRectMake(round((self.bounds.size.width - tagW) / 2), y, tagW, 22);
         [self.detail addSubview:tag];
         y += 30;
