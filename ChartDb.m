@@ -150,8 +150,10 @@ enum {
         BOOL hit = ([tl rangeOfString:lower].location != NSNotFound);
         if (!hit) {
             id artist = s[ADXSongArtist];
-            if ([artist isKindOfClass:[NSString class]])
-                hit = ([artist.lowercaseString rangeOfString:lower].location != NSNotFound);
+            if ([artist isKindOfClass:[NSString class]]) {
+                NSString *al = [(NSString *)artist lowercaseString];
+                hit = ([al rangeOfString:lower].location != NSNotFound);
+            }
         }
         if (!hit) {
             for (NSString *a in s[ADXSongAliases]) {

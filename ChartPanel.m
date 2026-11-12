@@ -405,7 +405,7 @@ static UIColor *DiffColor(NSInteger d)
         [[NSMutableAttributedString alloc] initWithString:[NSString stringWithFormat:@"%@ ", DiffName(d)]
                                                attributes:@{NSFontAttributeName: [UIFont systemFontOfSize:12.5 weight:UIFontWeightSemibold],
                                                             NSForegroundColorAttributeName: [ink colorWithAlphaComponent:0.92]}];
-    [top appendAttributedString:[[NSAttributedString alloc] initWithString:level ?: @""
+    [top appendAttributedString:[[NSAttributedString alloc] initWithString:(level.length ? level : @"")
                                                                attributes:@{NSFontAttributeName: [UIFont systemFontOfSize:19 weight:UIFontWeightBold],
                                                                             NSForegroundColorAttributeName: ink}]];
 
@@ -465,7 +465,8 @@ static UIColor *DiffColor(NSInteger d)
 
 - (void)loadCover:(int)songId into:(UIImageView *)iv
 {
-    NSString *dir = self.coverDir ?: [NSHomeDirectory() stringByAppendingPathComponent:@"Documents/covers"];
+    NSString *dir = self.coverDir.length ? self.coverDir
+                   : [NSHomeDirectory() stringByAppendingPathComponent:@"Documents/covers"];
     NSInteger expect = iv.tag;
     __weak UIImageView *weakIV = iv;
 
