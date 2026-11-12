@@ -20,6 +20,13 @@ static NSString *DiffName(NSInteger d)
     }
 }
 
+static UIColor *Darken(UIColor *c, CGFloat k)
+{
+    CGFloat r = 0, g = 0, b = 0, a = 1;
+    if (![c getRed:&r green:&g blue:&b alpha:&a]) return c;
+    return [UIColor colorWithRed:r * k green:g * k blue:b * k alpha:a];
+}
+
 static UIColor *DiffColor(NSInteger d)
 {
     switch (d) {
@@ -101,14 +108,9 @@ static UIColor *DiffColor(NSInteger d)
 - (NSAttributedString *)hintText
 {
     NSString *s = @"你可以使用曲目 ID、曲名、艺术家或曲目别名来搜索曲目。";
-    NSMutableAttributedString *a =
-        [[NSMutableAttributedString alloc] initWithString:s
-                                               attributes:@{NSFontAttributeName: [UIFont systemFontOfSize:12.5],
-                                                            NSForegroundColorAttributeName: [UIColor secondaryLabelColor]}];
-    NSRange r = [s rangeOfString:@"曲目别名"];
-    if (r.location != NSNotFound)
-        [a addAttribute:NSForegroundColorAttributeName value:[UIColor systemBlueColor] range:r];
-    return a;
+    return [[NSAttributedString alloc] initWithString:s
+                                          attributes:@{NSFontAttributeName: [UIFont systemFontOfSize:12.5],
+                                                       NSForegroundColorAttributeName: [UIColor secondaryLabelColor]}];
 }
 
 - (void)buildEmptyView
@@ -156,13 +158,14 @@ static UIColor *DiffColor(NSInteger d)
     tip.frame = CGRectMake(16, cy + 60, W - 32, 22);
 
     CGFloat sh = MIN(self.hits.count * 58.0, 320.0);
-    self.suggest.frame = CGRectMake(16, CGRectGetMaxY(self.search.frame) + 2, W - 32, sh);
+    self.suggest.frame = CGRectMake(16, CGRectGetMaxY(self.search.frame) - 3, W - 32, sh);
 }
 
 - (void)refreshVisibility
 {
     BOOL hasHits = self.hits.count > 0;
     self.suggest.hidden = !hasHits;
+    self.hintLabel.hidden = hasHits;          // 候选浮层出现时收起提示，避免被压住半行
     self.emptyView.hidden = (self.song != nil) || hasHits;
     self.detail.hidden = (self.song == nil);
     if (hasHits) [self bringSubviewToFront:self.suggest];
@@ -240,11 +243,12 @@ static UIColor *DiffColor(NSInteger d)
 
     CGFloat W = self.bounds.size.width - 32;
     CGFloat x = 16;
-    CGFloat y = 6;
+    CGFloat y0 = 4;
+    CGFloat y = y0 + 12;
 
     // 曲绘
     CGFloat coverSide = 84;
-    UIImageView *cover = [[UIImageView alloc] initWithFrame:CGRectMake(x, y, coverSide, coverSide)];
+    UIImageView *cover = [[UIImageView alloc] initWithFrame:CGRectMake(x + 8, y, coverSide, coverSide)];
     cover.backgroundColor = [UIColor secondarySystemBackgroundColor];
     cover.contentMode = UIViewContentModeScaleAspectFill;
     cover.layer.cornerRadius = 8;
@@ -254,8 +258,8 @@ static UIColor *DiffColor(NSInteger d)
     [self loadCover:[song[0] intValue] into:cover];
 
     // 编号
-    CGFloat tx = x + coverSide + 14;
-    CGFloat tw = W - coverSide - 14;
+    CGFloat tx = x + 8 + coverSide + 14;
+    CGFloat tw = W - coverSide - 22;
 
     UILabel *no = [[UILabel alloc] initWithFrame:CGRectMake(tx, y + 2, 96, 22)];
     no.text = [NSString stringWithFormat:@"  No.%d  ", [ADXChartDb displayId:song]];
@@ -332,7 +336,17 @@ static UIColor *DiffColor(NSInteger d)
         [self.detail addSubview:none];
         y += 20;
     }
-    y += 14;
+
+    // 信息区外圈细线（画在元素之下，不改变任何元素的位置）
+    CGFloat infoBottom = y + 6;
+    UIView *card = [[UIView alloc] initWithFrame:CGRectMake(x - 8, y0, W + 16, infoBottom - y0)];
+    card.backgroundColor = [UIColor secondarySystemGroupedBackgroundColor];
+    card.layer.cornerRadius = 12;
+    card.layer.borderWidth = 0.5;
+    card.layer.borderColor = [UIColor separatorColor].CGColor;
+    [self.detail insertSubview:card atIndex:0];
+
+    y = infoBottom + 10;
 
     // 标准 / DX
     BOOL hasStd = [(NSArray *)song[8] count] > 0;
@@ -340,7 +354,8 @@ static UIColor *DiffColor(NSInteger d)
     if (hasStd && hasDx) {
         UISegmentedControl *seg = [[UISegmentedControl alloc] initWithItems:@[@"标准", @"DX"]];
         seg.selectedSegmentIndex = self.typeIndex;
-        seg.frame = CGRectMake(x + 8, y, MIN(160, W - 16), 30);
+        CGFloat sw = MIN(160, W - 16);
+        seg.frame = CGRectMake(round((self.bounds.size.width - sw) / 2), y, sw, 30);
         [seg addTarget:self action:@selector(typeChanged:) forControlEvents:UIControlEventValueChanged];
         [self.detail addSubview:seg];
         y += 38;
@@ -354,7 +369,8 @@ static UIColor *DiffColor(NSInteger d)
         tag.layer.cornerRadius = 11;
         tag.layer.masksToBounds = YES;
         [tag sizeToFit];
-        tag.frame = CGRectMake(x + 8, y, tag.bounds.size.width, 22);
+        CGFloat tagW = tag.bounds.size.width;
+        tag.frame = CGRectMake(round((self.bounds.size.width - tagW) / 2), y, tagW, 22);
         [self.detail addSubview:tag];
         y += 30;
     }
@@ -395,11 +411,19 @@ static UIColor *DiffColor(NSInteger d)
 
     BOOL light = (d == 4);
     UIColor *ink = light ? ARGB(52, 50, 66) : [UIColor whiteColor];
+    UIColor *base = DiffColor(d);
+    UIColor *edge = Darken(base, 0.74);
 
     UIView *bar = [[UIView alloc] initWithFrame:CGRectMake(0, 0, W, 64)];
-    bar.backgroundColor = DiffColor(d);
+    bar.backgroundColor = base;
     bar.layer.cornerRadius = 10;
+    bar.layer.borderWidth = 1.0;
+    bar.layer.borderColor = edge.CGColor;
     bar.layer.masksToBounds = YES;
+
+    UIView *line = [[UIView alloc] initWithFrame:CGRectMake(0, 31.5, W, 0.5)];
+    line.backgroundColor = edge;
+    [bar addSubview:line];
 
     NSMutableAttributedString *top =
         [[NSMutableAttributedString alloc] initWithString:[NSString stringWithFormat:@"%@ ", DiffName(d)]
@@ -409,21 +433,40 @@ static UIColor *DiffColor(NSInteger d)
                                                                attributes:@{NSFontAttributeName: [UIFont systemFontOfSize:19 weight:UIFontWeightBold],
                                                                             NSForegroundColorAttributeName: ink}]];
 
-    UILabel *topLabel = [[UILabel alloc] initWithFrame:CGRectMake(14, 9, W - 28, 24)];
+    UILabel *topLabel = [[UILabel alloc] initWithFrame:CGRectMake(14, 7, W - 28, 24)];
     topLabel.attributedText = top;
     [bar addSubview:topLabel];
 
-    NSMutableString *sub = [NSMutableString string];
-    if (designer.length) [sub appendFormat:@"谱师 %@", designer];
+    UIFont *capF = [UIFont systemFontOfSize:12];
+    UIFont *valF = [UIFont systemFontOfSize:12 weight:UIFontWeightBold];
+    UIColor *capC = [ink colorWithAlphaComponent:0.72];
+
+    NSMutableAttributedString *sub = [[NSMutableAttributedString alloc] init];
+    if (designer.length) {
+        [sub appendAttributedString:[[NSAttributedString alloc] initWithString:@"谱师 "
+                                                                   attributes:@{NSFontAttributeName: capF,
+                                                                                NSForegroundColorAttributeName: capC}]];
+        [sub appendAttributedString:[[NSAttributedString alloc] initWithString:designer
+                                                                   attributes:@{NSFontAttributeName: valF,
+                                                                                NSForegroundColorAttributeName: ink}]];
+    }
     if (version.length) {
-        if (sub.length) [sub appendString:@"    "];
-        [sub appendFormat:@"版本 %@", version];
+        if (sub.length)
+            [sub appendAttributedString:[[NSAttributedString alloc] initWithString:@"    "
+                                                                       attributes:@{NSFontAttributeName: capF,
+                                                                                    NSForegroundColorAttributeName: capC}]];
+        [sub appendAttributedString:[[NSAttributedString alloc] initWithString:@"版本 "
+                                                                   attributes:@{NSFontAttributeName: capF,
+                                                                                NSForegroundColorAttributeName: capC}]];
+        [sub appendAttributedString:[[NSAttributedString alloc] initWithString:version
+                                                                   attributes:@{NSFontAttributeName: valF,
+                                                                                NSForegroundColorAttributeName: ink}]];
     }
 
-    UILabel *subLabel = [[UILabel alloc] initWithFrame:CGRectMake(14, 36, W - 28, 18)];
-    subLabel.text = sub;
-    subLabel.font = [UIFont systemFontOfSize:12];
-    subLabel.textColor = [ink colorWithAlphaComponent:0.86];
+    UILabel *subLabel = [[UILabel alloc] initWithFrame:CGRectMake(14, 38, W - 28, 18)];
+    subLabel.attributedText = sub;
+    subLabel.adjustsFontSizeToFitWidth = YES;
+    subLabel.minimumScaleFactor = 0.85;
     [bar addSubview:subLabel];
 
     return bar;
@@ -432,7 +475,7 @@ static UIColor *DiffColor(NSInteger d)
 - (CGFloat)layoutChips:(NSArray *)chips x:(CGFloat)x y:(CGFloat)y maxWidth:(CGFloat)maxW
 {
     CGFloat cx = x, cy = y;
-    CGFloat h = 28, pad = 12, gap = 8;
+    CGFloat h = 27, pad = 10, gap = 8;
     UIFont *f = [UIFont systemFontOfSize:13];
 
     for (id a in chips) {
@@ -451,8 +494,10 @@ static UIColor *DiffColor(NSInteger d)
         l.font = f;
         l.textAlignment = NSTextAlignmentCenter;
         l.textColor = [UIColor labelColor];
-        l.backgroundColor = [UIColor secondarySystemBackgroundColor];
-        l.layer.cornerRadius = h / 2;
+        l.backgroundColor = [UIColor secondarySystemGroupedBackgroundColor];
+        l.layer.cornerRadius = 8;
+        l.layer.borderWidth = 0.5;
+        l.layer.borderColor = [UIColor separatorColor].CGColor;
         l.layer.masksToBounds = YES;
         l.lineBreakMode = NSLineBreakByTruncatingTail;
         [self.detail addSubview:l];
