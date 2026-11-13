@@ -1,6 +1,7 @@
 // ChartPanel.m — 谱面查询：输入关键词 → 候选列表 → 曲目详情（曲绘 / 编号 / 别名 / 难度谱面）
 #import "ChartPanel.h"
 #import "ChartDb.h"
+#import "ChartDetailSheet.h"
 #import "B50Image.h"
 
 static UIColor *ARGB(CGFloat r, CGFloat g, CGFloat b)
@@ -38,6 +39,17 @@ static UIColor *DiffColor(NSInteger d)
         default: return ARGB(150, 92, 214);
     }
 }
+
+// 难度条本身可点，弹出「谱面详情」，所以让它自带一份数据
+@interface ADXBarView : UIView
+@property (nonatomic, strong) NSArray *song;
+@property (nonatomic, strong) NSArray *chart;
+@property (nonatomic, assign) BOOL isDx;
+@property (nonatomic, copy) NSString *version;
+@end
+
+@implementation ADXBarView
+@end
 
 @interface ADXChartPanel () <UISearchBarDelegate, UITableViewDataSource, UITableViewDelegate>
 
@@ -287,6 +299,7 @@ static UIColor *DiffColor(NSInteger d)
     [no sizeToFit];
     no.frame = CGRectMake(tx, y + 2, no.bounds.size.width + 26, 22);
     [self.detail addSubview:no];
+    [self copyable:no];
 
     UILabel *title = [[UILabel alloc] initWithFrame:CGRectMake(tx, y + 28, tw, 46)];
     title.text = song[1];
@@ -300,12 +313,14 @@ static UIColor *DiffColor(NSInteger d)
                                          context:nil].size;
     CGFloat th = MAX(24, MIN(46, ceil(ts.height)));
     title.frame = CGRectMake(tx, y + 28, tw, th);
+    [self copyable:title];
 
     UILabel *artist = [[UILabel alloc] initWithFrame:CGRectMake(tx, y + 30 + th, tw, 20)];
     artist.text = song[2];
     artist.font = [UIFont systemFontOfSize:14];
     artist.textColor = [UIColor secondaryLabelColor];
     [self.detail addSubview:artist];
+    [self copyable:artist];
 
     y += MAX(coverSide, 30 + th + 20) + 22;
 
@@ -329,6 +344,7 @@ static UIColor *DiffColor(NSInteger d)
         val.adjustsFontSizeToFitWidth = YES;
         val.minimumScaleFactor = 0.75;
         [self.detail addSubview:val];
+        [self copyable:val];
     }
     y += 46;
 
@@ -393,7 +409,11 @@ static UIColor *DiffColor(NSInteger d)
     // 难度谱面
     NSArray *charts = [ADXChartDb chartsOf:song dx:(self.typeIndex == 1)];
     for (NSArray *c in charts) {
-        UIView *bar = [self barForChart:c version:[ADXChartDb versionName:song] width:W - 32];
+        UIView *bar = [self barForChart:c
+                                   song:song
+                                     dx:(self.typeIndex == 1)
+                                version:[ADXChartDb versionName:song]
+                                  width:W - 32];
         bar.frame = CGRectMake(x + 8, y, W - 32, 64);
         [self.detail addSubview:bar];
         y += 64 + 10;
@@ -417,19 +437,113 @@ static UIColor *DiffColor(NSInteger d)
     [self rebuildDetail];
 }
 
-- (UIView *)barForChart:(NSArray *)chart version:(NSString *)version width:(CGFloat)W
+#pragma mark - 长按复制
+
+- (void)copyable:(UIView *)v
+{
+    if (!v) return;
+    v.userInteractionEnabled = YES;
+    UILongPressGestureRecognizer *g =
+        [[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(longPressCopy:)];
+    g.minimumPressDuration = 0.45;
+    [v addGestureRecognizer:g];
+}
+
+- (void)longPressCopy:(UILongPressGestureRecognizer *)g
+{
+    if (g.state != UIGestureRecognizerStateBegan) return;
+
+    NSString *text = nil;
+    if ([g.view isKindOfClass:[UILabel class]]) {
+        UILabel *l = (UILabel *)g.view;
+        text = l.text.length ? l.text : l.attributedText.string;
+    }
+    if (!text.length) return;
+
+    [UIPasteboard generalPasteboard].string = text;
+    [self toast:[NSString stringWithFormat:@"已复制：%@", text]];
+}
+
+- (void)toast:(NSString *)msg
+{
+    UIView *host = self.window ?: self;
+
+    UILabel *t = [[UILabel alloc] initWithFrame:CGRectZero];
+    t.text = msg;
+    t.font = [UIFont systemFontOfSize:13];
+    t.textColor = [UIColor whiteColor];
+    t.backgroundColor = [UIColor colorWithWhite:0 alpha:0.82];
+    t.textAlignment = NSTextAlignmentCenter;
+    t.lineBreakMode = NSLineBreakByTruncatingMiddle;
+    t.layer.cornerRadius = 15;
+    t.layer.masksToBounds = YES;
+
+    CGFloat maxW = host.bounds.size.width - 80;
+    CGSize s = [t sizeThatFits:CGSizeMake(maxW, 30)];
+    CGFloat w = MIN(maxW, s.width + 30);
+    t.frame = CGRectMake(round((host.bounds.size.width - w) / 2),
+                         CGRectGetMaxY(host.bounds) - 104, w, 30);
+    t.alpha = 0;
+    [host addSubview:t];
+
+    __weak UILabel *weakT = t;
+    [UIView animateWithDuration:0.15
+                     animations:^{
+        weakT.alpha = 1;
+    }
+                     completion:^(BOOL ok) {
+        [UIView animateWithDuration:0.25
+                              delay:1.0
+                            options:UIViewAnimationOptionCurveEaseIn
+                         animations:^{
+            weakT.alpha = 0;
+        }
+                         completion:^(BOOL done) {
+            [weakT removeFromSuperview];
+        }];
+    }];
+}
+
+#pragma mark - 难度条 → 谱面详情
+
+- (void)tapBar:(UITapGestureRecognizer *)g
+{
+    if (g.state != UIGestureRecognizerStateEnded) return;
+
+    ADXBarView *bar = (ADXBarView *)g.view;
+    if (![bar isKindOfClass:[ADXBarView class]]) return;
+
+    UIView *host = self.window ?: self;
+    [ADXChartSheet presentSong:bar.song
+                         chart:bar.chart
+                            dx:bar.isDx
+                       version:bar.version
+                      coverDir:self.coverDir
+                        inView:host];
+}
+
+- (UIView *)barForChart:(NSArray *)chart
+                   song:(NSArray *)song
+                     dx:(BOOL)isDx
+                version:(NSString *)version
+                  width:(CGFloat)W
 {
     NSInteger d = [chart[0] integerValue];
-    NSString *level = chart.count > 1 ? chart[1] : @"";
-    NSString *designer = chart.count > 2 ? chart[2] : @"";
-    if (![designer isKindOfClass:[NSString class]]) designer = @"";
+    NSString *level = [ADXChartDb levelTextOfChart:chart];
+    NSString *designer = [ADXChartDb designerOfChart:chart];
 
     BOOL light = (d == 4);
     UIColor *ink = light ? ARGB(52, 50, 66) : [UIColor whiteColor];
     UIColor *base = DiffColor(d);
     UIColor *edge = Darken(base, 0.74);
 
-    UIView *bar = [[UIView alloc] initWithFrame:CGRectMake(0, 0, W, 64)];
+    ADXBarView *bar = [[ADXBarView alloc] initWithFrame:CGRectMake(0, 0, W, 64)];
+    bar.song = song;
+    bar.chart = chart;
+    bar.isDx = isDx;
+    bar.version = version;
+    bar.userInteractionEnabled = YES;
+    [bar addGestureRecognizer:[[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(tapBar:)]];
     bar.backgroundColor = base;
     bar.layer.cornerRadius = 10;
     bar.layer.borderWidth = 1.0;
@@ -516,6 +630,7 @@ static UIColor *DiffColor(NSInteger d)
         l.layer.masksToBounds = YES;
         l.lineBreakMode = NSLineBreakByTruncatingTail;
         [self.detail addSubview:l];
+        [self copyable:l];
 
         cx += w + gap;
     }

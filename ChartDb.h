@@ -23,7 +23,16 @@
 /// 「舞萌DX 2024」这种版本名
 + (NSString *)versionName:(NSArray *)song;
 
-/// 某一边的谱面，按难度从高到低：每项是 [难度 0-4, 定数, 谱师]
+/// 某一边的谱面，按难度从高到低：每项是 [难度 0-4, 标准定数, 谱师, 物量]
 + (NSArray *)chartsOf:(NSArray *)song dx:(BOOL)dx;
+
+/// 「14.9」这种定数文本
++ (NSString *)levelTextOfChart:(NSArray *)chart;
+
+/// 谱师
++ (NSString *)designerOfChart:(NSArray *)chart;
+
+/// 物量 [TAP, HOLD, SLIDE, TOUCH, BREAK]，没有数据时是 nil
++ (NSArray *)notesOfChart:(NSArray *)chart;
 
 @end
