@@ -598,7 +598,51 @@ static UIColor *DiffColor(NSInteger d)
     subLabel.minimumScaleFactor = 0.85;
     [bar addSubview:subLabel];
 
+    // 谱师 / 版本 各自一块透明热区：长按复制，轻点仍然是点整条弹窗
+    CGFloat avail = W - 28;
+    CGFloat wCap1 = ceil([@"谱师 " sizeWithAttributes:@{NSFontAttributeName: capF}].width);
+    CGFloat wVal1 = designer.length ? ceil([designer sizeWithAttributes:@{NSFontAttributeName: valF}].width) : 0;
+    CGFloat wCap2 = version.length ? ceil([@"版本 " sizeWithAttributes:@{NSFontAttributeName: capF}].width) : 0;
+    CGFloat wVal2 = version.length ? ceil([version sizeWithAttributes:@{NSFontAttributeName: valF}].width) : 0;
+
+    CGFloat adv1 = 22;                       // 版本前的间隔（"    " 四个空格）
+    CGFloat total = wCap1 + wVal1 + (version.length ? adv1 + wCap2 + wVal2 : 0);
+    CGFloat k = (total > avail && total > 0) ? avail / total : 1.0;
+
+    CGFloat hx = 14;
+    if (designer.length) {
+        [self copyZone:CGRectMake(hx + wCap1 * k, 38, MAX(10, wVal1 * k), 18) text:designer in:bar];
+        hx += (wCap1 + wVal1) * k;
+    }
+    if (version.length) {
+        hx += adv1 * k;
+        [self copyZone:CGRectMake(hx + wCap2 * k, 38, MAX(10, wVal2 * k), 18) text:version in:bar];
+    }
+
     return bar;
+}
+
+/// 在难度条上叠一块只有文字看不见的热区，长按复制该文字
+- (void)copyZone:(CGRect)rect text:(NSString *)text in:(UIView *)bar
+{
+    if (!text.length) return;
+
+    UILabel *z = [[UILabel alloc] initWithFrame:rect];
+    z.text = text;
+    z.font = [UIFont systemFontOfSize:12];
+    z.textColor = [UIColor clearColor];      // 透明但可点：alpha 不能为 0，否则不参与命中测试
+    z.userInteractionEnabled = YES;
+
+    UILongPressGestureRecognizer *lp =
+        [[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(longPressCopy:)];
+    lp.minimumPressDuration = 0.45;
+    [z addGestureRecognizer:lp];
+
+    // 长按已经触发时，不要再把这次操作当成「点开谱面详情」
+    for (UIGestureRecognizer *g in bar.gestureRecognizers)
+        if ([g isKindOfClass:[UITapGestureRecognizer class]]) [g requireGestureRecognizerToFail:lp];
+
+    [bar addSubview:z];
 }
 
 - (CGFloat)layoutChips:(NSArray *)chips x:(CGFloat)x y:(CGFloat)y maxWidth:(CGFloat)maxW
