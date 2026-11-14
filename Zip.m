@@ -8,6 +8,29 @@ static uint32_t ZipRd32(const uint8_t *p)
 {
     return (uint32_t)(p[0] | (p[1] << 8) | (p[2] << 16) | ((uint32_t)p[3] << 24));
 }
+static uint64_t ZipRd64(const uint8_t *p)
+{
+    return (uint64_t)ZipRd32(p) | ((uint64_t)ZipRd32(p + 4) << 32);
+}
+
+/// 清洗条目名：反斜杠转斜杠，丢掉 ""、"."、".." 这些会跳出目录的片段。
+/// 我们永远只写到 dest 里面，所以把危险片段剔掉比直接报错更安全，也不会白丢一个压缩包。
+static NSString *ZipCleanName(NSString *raw, BOOL *changed)
+{
+    NSString *s = [raw stringByReplacingOccurrencesOfString:@"\\" withString:@"/"];
+
+    NSMutableArray *keep = [NSMutableArray array];
+    BOOL mod = NO;
+    for (NSString *c in [s componentsSeparatedByString:@"/"]) {
+        if (c.length == 0 || [c isEqualToString:@"."] || [c isEqualToString:@".."]) {
+            mod = YES;
+            continue;
+        }
+        [keep addObject:c];
+    }
+    if (changed) *changed = mod;
+    return [keep componentsJoinedByString:@"/"];
+}
 
 static NSString *ZipName(const uint8_t *p, NSUInteger len, BOOL utf8Flag)
 {
@@ -78,8 +101,21 @@ static BOOL ZipInflateToFile(const uint8_t *src, NSUInteger srcLen, NSString *ou
         return nil;
     }
 
-    uint16_t count = ZipRd16(b + eocd + 10);
-    uint32_t cdOffset = ZipRd32(b + eocd + 16);
+    uint64_t count = ZipRd16(b + eocd + 10);
+    uint64_t cdOffset = ZipRd32(b + eocd + 16);
+
+    // zip64：Windows / 7-Zip / Bandizip 有时即使文件不大也会写成 zip64，
+    // 此时 EOCD 里是 0xFFFF / 0xFFFFFFFF 这样的占位值，真实数值在 zip64 EOCD 里。
+    if (count == 0xFFFF || cdOffset == 0xFFFFFFFF) {
+        if (eocd >= 20 && ZipRd32(b + eocd - 20) == 0x07064b50) {      // zip64 定位器
+            uint64_t z = ZipRd64(b + eocd - 20 + 8);
+            if (z + 56 <= n && ZipRd32(b + z) == 0x06064b50) {          // zip64 EOCD
+                count = ZipRd64(b + z + 32);
+                cdOffset = ZipRd64(b + z + 48);
+            }
+        }
+    }
+
     if (cdOffset >= n || count == 0) {
         if (error) *error = [NSError errorWithDomain:@"ADXZip" code:3 userInfo:@{NSLocalizedDescriptionKey: @"zip 目录为空"}];
         return nil;
@@ -88,8 +124,10 @@ static BOOL ZipInflateToFile(const uint8_t *src, NSUInteger srcLen, NSString *ou
     // 第一遍：读中央目录，收集条目
     NSMutableArray *names = [NSMutableArray array];
     NSMutableArray *entries = [NSMutableArray array];
-    NSUInteger p = cdOffset;
-    for (int i = 0; i < count; i++) {
+    NSUInteger p = (NSUInteger)cdOffset;
+    NSInteger skipped = 0;
+    NSString *firstBad = nil;
+    for (uint64_t i = 0; i < count; i++) {
         if (p + 46 > n || ZipRd32(b + p) != 0x02014b50) break;
         uint16_t flags = ZipRd16(b + p + 8);
         uint16_t method = ZipRd16(b + p + 10);
@@ -99,18 +137,31 @@ static BOOL ZipInflateToFile(const uint8_t *src, NSUInteger srcLen, NSString *ou
         uint16_t extraLen = ZipRd16(b + p + 30);
         uint16_t commentLen = ZipRd16(b + p + 32);
 
-        NSString *name = ZipName(b + p + 46, nameLen, (flags & 0x0800) != 0);
-        if (name.length == 0) break;
-        if ([name containsString:@".."] || [name hasPrefix:@"/"]) {
-            if (error) *error = [NSError errorWithDomain:@"ADXZip" code:4 userInfo:@{NSLocalizedDescriptionKey: @"zip 里有可疑路径，已中止"}];
-            return nil;
+        NSString *raw = ZipName(b + p + 46, nameLen, (flags & 0x0800) != 0);
+        p += 46 + nameLen + extraLen + commentLen;
+        if (raw.length == 0) continue;
+
+        BOOL changed = NO;
+        BOOL isDir = [raw hasSuffix:@"/"] || [raw hasSuffix:@"\\"];
+        NSString *name = ZipCleanName(raw, &changed);
+        if (name.length == 0) {
+            skipped++;
+            if (!firstBad) firstBad = raw;
+            continue;
         }
+        // 目录条目要保留结尾斜杠，否则第二遍会把它当成文件来写
+        if (isDir) name = [name stringByAppendingString:@"/"];
+
         [names addObject:name];
         [entries addObject:@[@(method), @(csize), @(lho), @(flags)]];
-        p += 46 + nameLen + extraLen + commentLen;
     }
     if (entries.count == 0) {
-        if (error) *error = [NSError errorWithDomain:@"ADXZip" code:5 userInfo:@{NSLocalizedDescriptionKey: @"zip 里没有可用条目"}];
+        NSString *why = skipped
+            ? [NSString stringWithFormat:@"zip 里没有安全的条目（首个可疑：%@）",
+                                         [firstBad substringToIndex:MIN((NSUInteger)60, firstBad.length)]]
+            : @"zip 里没有可用条目";
+        if (error) *error = [NSError errorWithDomain:@"ADXZip" code:5
+                                            userInfo:@{NSLocalizedDescriptionKey: why}];
         return nil;
     }
 
