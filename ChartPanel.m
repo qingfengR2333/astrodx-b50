@@ -2,6 +2,8 @@
 #import "ChartPanel.h"
 #import "ChartDb.h"
 #import "ChartDetailSheet.h"
+#import "ChartFav.h"
+#import "ChartDownloadSheet.h"
 #import "B50Image.h"
 
 static UIColor *ARGB(CGFloat r, CGFloat g, CGFloat b)
@@ -62,6 +64,7 @@ static UIColor *DiffColor(NSInteger d)
 @property (nonatomic, copy) NSArray *hits;
 @property (nonatomic, copy) NSArray *song;
 @property (nonatomic, assign) NSInteger typeIndex;   // 0 标准 · 1 DX
+@property (nonatomic, strong) UIButton *favButton;
 
 @end
 
@@ -286,7 +289,7 @@ static UIColor *DiffColor(NSInteger d)
 
     // 编号
     CGFloat tx = x + 8 + coverSide + 14;
-    CGFloat tw = W - coverSide - 22;
+    CGFloat tw = W - coverSide - 22 - 44;   // 右侧给收藏星让出位置
 
     UILabel *no = [[UILabel alloc] initWithFrame:CGRectZero];
     no.text = [ADXChartDb numberText:song];
@@ -382,6 +385,15 @@ static UIColor *DiffColor(NSInteger d)
     card.layer.borderColor = [UIColor separatorColor].CGColor;
     [self.detail insertSubview:card atIndex:0];
 
+    // 右上角收藏星
+    UIButton *star = [UIButton buttonWithType:UIButtonTypeSystem];
+    star.frame = CGRectMake(CGRectGetMaxX(card.frame) - 46, y0 + 6, 38, 38);
+    star.tintColor = [UIColor tertiaryLabelColor];
+    [star addTarget:self action:@selector(toggleFav) forControlEvents:UIControlEventTouchUpInside];
+    [self.detail addSubview:star];
+    self.favButton = star;
+    [self refreshFavButton];
+
     y = infoBottom + 10;
 
     // 标准 / DX
@@ -434,7 +446,67 @@ static UIColor *DiffColor(NSInteger d)
         y += 26;
     }
 
+    // 收藏夹 / 谱面下载
+    y += 6;
+    CGFloat btnW = (W - 32 - 12) / 2;
+    UIButton *favBtn = [self pillButton:@"收藏夹" frame:CGRectMake(x + 8, y, btnW, 44)];
+    [favBtn addTarget:self action:@selector(openFavorites) forControlEvents:UIControlEventTouchUpInside];
+    [self.detail addSubview:favBtn];
+
+    UIButton *dlBtn = [self pillButton:@"谱面下载" frame:CGRectMake(x + 8 + btnW + 12, y, btnW, 44)];
+    [dlBtn addTarget:self action:@selector(openDownload) forControlEvents:UIControlEventTouchUpInside];
+    [self.detail addSubview:dlBtn];
+    y += 44;
+
     self.detail.contentSize = CGSizeMake(self.bounds.size.width, y + 24);
+}
+
+- (UIButton *)pillButton:(NSString *)title frame:(CGRect)frame
+{
+    UIButton *b = [UIButton buttonWithType:UIButtonTypeSystem];
+    b.frame = frame;
+    [b setTitle:title forState:UIControlStateNormal];
+    b.titleLabel.font = [UIFont systemFontOfSize:15 weight:UIFontWeightSemibold];
+    b.backgroundColor = [UIColor secondarySystemGroupedBackgroundColor];
+    [b setTitleColor:[UIColor labelColor] forState:UIControlStateNormal];
+    b.layer.cornerRadius = 10;
+    b.layer.borderWidth = 0.5;
+    b.layer.borderColor = [UIColor separatorColor].CGColor;
+    return b;
+}
+
+#pragma mark - 收藏 / 下载
+
+- (void)refreshFavButton
+{
+    int sid = [self.song[0] intValue];
+    BOOL on = [ADXChartFav contains:sid];
+    UIImageSymbolConfiguration *cfg = [UIImageSymbolConfiguration configurationWithPointSize:20
+                                                                                   weight:UIImageSymbolWeightMedium];
+    UIImage *img = [UIImage systemImageNamed:(on ? @"star.fill" : @"star") withConfiguration:cfg];
+    [self.favButton setImage:img forState:UIControlStateNormal];
+    self.favButton.tintColor = on ? [UIColor systemYellowColor] : [UIColor tertiaryLabelColor];
+}
+
+- (void)toggleFav
+{
+    int sid = [self.song[0] intValue];
+    BOOL on = [ADXChartFav toggle:sid];
+    [self refreshFavButton];
+    [self toast:(on ? @"已收藏" : @"已取消收藏")];
+}
+
+- (void)openFavorites
+{
+    __weak __typeof(self) weakSelf = self;
+    [ADXChartFavSheet presentInView:self.window open:^(int songId) {
+        [weakSelf showSongById:songId];
+    }];
+}
+
+- (void)openDownload
+{
+    [ADXChartDownloadSheet presentSong:self.song dx:(self.typeIndex == 1) inView:self.window];
 }
 
 - (void)typeChanged:(UISegmentedControl *)seg
