@@ -27,16 +27,16 @@
     hint.numberOfLines = 0;
     hint.font = [UIFont systemFontOfSize:13];
     hint.textColor = [UIColor secondaryLabelColor];
-    hint.text = @"选择一个或多个 .zip，会各自解压成独立文件夹：\n"
-                 @"  Documents/levels/<曲名>/...\n"
-                 @"  Documents/skins/<皮肤名>/...\n"
-                 @"导入完回到游戏，重开 App 或刷新曲库即可看到。";
+    hint.text = @"支持两种 .zip，可以多选：\n"
+                 @"  · 单个谱面 / 皮肤 → 解压成 Documents/levels/<曲名>/、Documents/skins/<皮肤名>/\n"
+                 @"  · 谱包（一个 zip 里装着很多 zip）→ 自动逐个解压，每个谱面一个独立文件夹\n"
+                 @"全是本地解压，不联网。导入完回到游戏，重开 App 或刷新曲库即可看到。";
     [stack addArrangedSubview:hint];
 
     // 钢蓝 #4682B4 提亮 40% ≈ #91B1D0
     UIColor *steel = [UIColor colorWithRed:0x91/255.0 green:0xB1/255.0 blue:0xD0/255.0 alpha:1.0];
-    [stack addArrangedSubview:[self makeButton:@"导入谱面（.zip，可多选）" action:@selector(pickLevels) color:steel]];
-    [stack addArrangedSubview:[self makeButton:@"导入皮肤（.zip，可多选）" action:@selector(pickSkins) color:steel]];
+    [stack addArrangedSubview:[self makeButton:@"导入谱面 / 谱包（.zip，可多选）" action:@selector(pickLevels) color:steel]];
+    [stack addArrangedSubview:[self makeButton:@"导入皮肤 / 皮肤包（.zip，可多选）" action:@selector(pickSkins) color:steel]];
 
     self.spinner = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
     self.spinner.hidesWhenStopped = YES;
@@ -124,30 +124,55 @@
                   (unsigned long)urls.count, kind]];
 
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
-        NSMutableArray *lines = [NSMutableArray array];
-        int ok = 0, fail = 0;
+        int ok = 0, fail = 0, dirs = 0;
 
         for (NSURL *u in urls) {
             NSError *err = nil;
             BOOL scoped = [u startAccessingSecurityScopedResource];
-            NSString *created = [ADXZip importZip:u.path into:parent error:&err];
+            NSArray *created = [ADXZip importPack:u.path into:parent error:&err];
             if (scoped) [u stopAccessingSecurityScopedResource];
 
-            if (created) {
-                ok++;
-                [lines addObject:[NSString stringWithFormat:@"✓ %@ → %@/",
-                                  u.lastPathComponent, created.lastPathComponent]];
-            } else {
+            NSMutableArray *chunk = [NSMutableArray array];
+
+            if (created.count == 0) {
                 fail++;
-                [lines addObject:[NSString stringWithFormat:@"✗ %@：%@",
+                [chunk addObject:[NSString stringWithFormat:@"✗ %@：%@",
                                   u.lastPathComponent,
                                   err.localizedDescription ?: @"解压失败"]];
+            } else {
+                ok++;
+                dirs += (int)created.count;
+
+                if (created.count == 1) {
+                    [chunk addObject:[NSString stringWithFormat:@"✓ %@ → %@/",
+                                      u.lastPathComponent,
+                                      [created[0] lastPathComponent]]];
+                } else {
+                    [chunk addObject:[NSString stringWithFormat:@"✓ %@ → 谱包，展开 %lu 个文件夹",
+                                      u.lastPathComponent, (unsigned long)created.count]];
+                    NSUInteger shown = 0;
+                    for (NSString *d in created) {
+                        if (shown >= 6) {
+                            [chunk addObject:[NSString stringWithFormat:@"     … 还有 %lu 个",
+                                              (unsigned long)(created.count - 6)]];
+                            break;
+                        }
+                        [chunk addObject:[NSString stringWithFormat:@"     · %@/",
+                                          d.lastPathComponent]];
+                        shown++;
+                    }
+                }
             }
+
+            // 一个文件处理完就刷一次日志，谱包很大时也不会像卡死
+            dispatch_async(dispatch_get_main_queue(), ^{
+                for (NSString *l in chunk) [self append:l];
+            });
         }
 
         dispatch_async(dispatch_get_main_queue(), ^{
-            for (NSString *l in lines) [self append:l];
-            [self append:[NSString stringWithFormat:@"完成：成功 %d，失败 %d", ok, fail]];
+            [self append:[NSString stringWithFormat:@"完成：成功 %d 个文件、失败 %d 个，共导入 %d 个文件夹",
+                          ok, fail, dirs]];
             [self.spinner stopAnimating];
         });
     });

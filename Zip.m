@@ -175,4 +175,98 @@ static BOOL ZipInflateToFile(const uint8_t *src, NSUInteger srcLen, NSString *ou
     return dest;
 }
 
+#pragma mark - 谱包（zip 里套 zip）
+
+/// 目录重名时加 (2)、(3)…
+static NSString *ZipUniqueDir(NSString *parent, NSString *name)
+{
+    NSFileManager *fm = [NSFileManager defaultManager];
+    NSString *dest = [parent stringByAppendingPathComponent:name];
+    int i = 2;
+    while ([fm fileExistsAtPath:dest]) {
+        dest = [parent stringByAppendingPathComponent:
+                [NSString stringWithFormat:@"%@ (%d)", name, i++]];
+    }
+    return dest;
+}
+
+/// 递归找出 dir 下所有 .zip
+static NSArray *ZipFindInner(NSString *dir)
+{
+    NSMutableArray *out = [NSMutableArray array];
+    NSFileManager *fm = [NSFileManager defaultManager];
+    NSDirectoryEnumerator *en = [fm enumeratorAtPath:dir];
+    for (NSString *rel in en) {
+        if ([[rel pathExtension].lowercaseString isEqualToString:@"zip"]) {
+            [out addObject:[dir stringByAppendingPathComponent:rel]];
+        }
+    }
+    return out;
+}
+
++ (NSArray *)importPack:(NSString *)zipPath into:(NSString *)parentDir error:(NSError **)error
+{
+    NSFileManager *fm = [NSFileManager defaultManager];
+    NSError *err = nil;
+
+    // 先解到临时目录，看看里面是「谱面本体」还是「一包谱面」
+    NSString *tmp = [NSTemporaryDirectory() stringByAppendingPathComponent:
+                     [@"ADXImport-" stringByAppendingString:NSUUID.UUID.UUIDString]];
+    [fm createDirectoryAtPath:tmp withIntermediateDirectories:YES attributes:nil error:nil];
+
+    NSString *outer = [self importZip:zipPath into:tmp error:error];
+    if (!outer) {
+        [fm removeItemAtPath:tmp error:nil];
+        return nil;
+    }
+
+    NSArray *inner = ZipFindInner(outer);
+
+    // 情况一：就是个普通谱面 / 皮肤
+    if (inner.count == 0) {
+        NSString *dest = ZipUniqueDir(parentDir, outer.lastPathComponent);
+        if (![fm moveItemAtPath:outer toPath:dest error:&err]) {
+            if (error) *error = err;
+            [fm removeItemAtPath:tmp error:nil];
+            return nil;
+        }
+        [fm removeItemAtPath:tmp error:nil];
+        return @[dest];
+    }
+
+    // 情况二：谱包，逐个内层 zip 展开
+    NSMutableArray *made = [NSMutableArray array];
+    NSError *lastErr = nil;
+
+    for (NSString *innerZip in inner) {
+        NSString *sub = [tmp stringByAppendingPathComponent:
+                         [@"x-" stringByAppendingString:NSUUID.UUID.UUIDString]];
+        [fm createDirectoryAtPath:sub withIntermediateDirectories:YES attributes:nil error:nil];
+
+        NSError *e = nil;
+        NSString *dir = [self importZip:innerZip into:sub error:&e];
+        if (!dir) {
+            lastErr = e;
+            continue;
+        }
+
+        NSString *dest = ZipUniqueDir(parentDir, dir.lastPathComponent);
+        if ([fm moveItemAtPath:dir toPath:dest error:&e]) {
+            [made addObject:dest];
+        } else {
+            lastErr = e;
+        }
+    }
+
+    [fm removeItemAtPath:tmp error:nil];
+
+    if (made.count == 0) {
+        if (error) *error = lastErr ?: [NSError errorWithDomain:@"ADXZip" code:20
+                                                       userInfo:@{NSLocalizedDescriptionKey:
+                                                                  @"谱包里没有能解压的谱面"}];
+        return nil;
+    }
+    return made;
+}
+
 @end

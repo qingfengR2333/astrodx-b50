@@ -9,4 +9,10 @@
 /// 返回创建出来的文件夹路径；失败返回 nil。
 + (NSString *)importZip:(NSString *)zipPath into:(NSString *)parentDir error:(NSError **)error;
 
+/// 导入一个 zip，自动区分「单个谱面/皮肤」和「谱包」：
+///   - 里面没有 .zip  → 当成单个谱面，解压成一个文件夹
+///   - 里面有很多 .zip → 当成谱包，每个内层 zip 各自解压成独立文件夹
+/// 返回所有新建的文件夹路径；一个都没建成时返回 nil。
++ (NSArray *)importPack:(NSString *)zipPath into:(NSString *)parentDir error:(NSError **)error;
+
 @end
