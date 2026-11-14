@@ -10,38 +10,6 @@
 #import "ChartDb.h"
 #import <math.h>
 
-#pragma mark - 透传视图
-
-// 浮球窗口铺满全屏。如果它的根视图照常参与命中测试，游戏本身会完全点不动；
-// 这里让根视图「只有点到浮球时才命中」，其余位置返回 nil，触摸继续落到下面的游戏窗口。
-@interface ADXPassView : UIView
-@end
-
-@implementation ADXPassView
-
-- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event
-{
-    UIView *v = [super hitTest:point withEvent:event];
-    return (v == self) ? nil : v;
-}
-
-@end
-
-// UIView 的默认实现「没有子视图命中就返回自己」，窗口也一样——
-// 所以窗口也得透传，否则点到空白处会停在窗口上，游戏收不到事件。
-@interface ADXPassWindow : UIWindow
-@end
-
-@implementation ADXPassWindow
-
-- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event
-{
-    UIView *v = [super hitTest:point withEvent:event];
-    return (v == self) ? nil : v;
-}
-
-@end
-
 #pragma mark - 颜色
 
 static UIColor *ADXDiffColor(int d)
@@ -352,13 +320,7 @@ static UINavigationController *gB50Nav;
     gScreenSize = s;
 
     if (gWindow) {
-        gWindow.frame = CGRectMake(0, 0, s.width, s.height);
-        gWindow.opaque = NO;
-        gWindow.backgroundColor = [UIColor clearColor];
-        gWindow.rootViewController.view.opaque = NO;
-        gWindow.rootViewController.view.backgroundColor = [UIColor clearColor];
-        [gWindow layoutIfNeeded];
-        [self applySettings];          // 重新按新尺寸夹一次浮球位置
+        [self applySettings];          // 尺寸变了，按新屏幕重新夹一次浮球位置
     }
 
     if (gPanelWindow) {
@@ -422,29 +384,26 @@ static UINavigationController *gB50Nav;
 
     CGFloat side = [ADXSettings size];
 
-    // 窗口始终铺满全屏，浮球是里面的一个子视图。
-    // 之前是「窗口只有 56×56」，旋转时 UIKit 会按旧尺寸重建窗口，
-    // 圆球外面那圈方形就被涂成黑底，于是出现四个黑方块。
-    CGRect b = gWindow.bounds;
-    if (b.size.width < 1 || b.size.height < 1) b = CGRectMake(0, 0, gScreenSize.width, gScreenSize.height);
+    CGSize s = gScreenSize;
+    if (s.width < 1 || s.height < 1) s = [UIScreen mainScreen].bounds.size;
 
     CGPoint c;
     NSUserDefaults *ud = [NSUserDefaults standardUserDefaults];
     if ([ud objectForKey:@"adx.ballPosX"] != nil) {
         // 存的是归一化坐标（0~1），换方向、换屏幕尺寸都还能落在相对位置
-        c = CGPointMake([ud doubleForKey:@"adx.ballPosX"] * b.size.width,
-                        [ud doubleForKey:@"adx.ballPosY"] * b.size.height);
+        c = CGPointMake([ud doubleForKey:@"adx.ballPosX"] * s.width,
+                        [ud doubleForKey:@"adx.ballPosY"] * s.height);
     } else {
-        c = CGPointMake(b.size.width - side / 2 - 12, b.size.height * 0.35);
+        c = CGPointMake(s.width - side / 2 - 12, s.height * 0.35);
     }
-    c.x = MAX(side / 2, MIN(c.x, b.size.width - side / 2));
-    c.y = MAX(side / 2, MIN(c.y, b.size.height - side / 2));
+    c.x = MAX(side / 2, MIN(c.x, s.width - side / 2));
+    c.y = MAX(side / 2, MIN(c.y, s.height - side / 2));
 
-    gBall.bounds = CGRectMake(0, 0, side, side);
-    gBall.center = c;
+    // 窗口只有浮球那么大，位置由窗口原点决定，球固定在窗口中心
+    gWindow.frame = CGRectMake(round(c.x - side / 2), round(c.y - side / 2), side, side);
+    gBall.frame = CGRectMake(0, 0, side, side);
     gBall.opaque = NO;
     gBall.layer.cornerRadius = side / 2;
-    gBall.layer.shadowPath = [UIBezierPath bezierPathWithOvalInRect:gBall.bounds].CGPath;
     gBall.backgroundColor = [[ADXSettings color] colorWithAlphaComponent:[ADXSettings alpha]];
 
     gBallLabel.frame = gBall.bounds;
@@ -465,13 +424,14 @@ static UINavigationController *gB50Nav;
 /// 把浮球当前位置按「占屏幕的比例」存下来，下次启动 / 换方向都能回到同一处
 + (void)saveBallPos
 {
-    if (!gWindow || !gBall) return;
-    CGSize s = gWindow.bounds.size;
+    if (!gWindow) return;
+    CGSize s = gScreenSize;
+    if (s.width < 1 || s.height < 1) s = [UIScreen mainScreen].bounds.size;
     if (s.width < 1 || s.height < 1) return;
 
     NSUserDefaults *ud = [NSUserDefaults standardUserDefaults];
-    [ud setDouble:gBall.center.x / s.width forKey:@"adx.ballPosX"];
-    [ud setDouble:gBall.center.y / s.height forKey:@"adx.ballPosY"];
+    [ud setDouble:gWindow.center.x / s.width forKey:@"adx.ballPosX"];
+    [ud setDouble:gWindow.center.y / s.height forKey:@"adx.ballPosY"];
 }
 
 + (void)install
@@ -485,32 +445,28 @@ static UINavigationController *gB50Nav;
     CGFloat side = 56;
 
     if (scene) {
-        gWindow = [[ADXPassWindow alloc] initWithWindowScene:scene];
+        gWindow = [[UIWindow alloc] initWithWindowScene:scene];
     } else {
-        gWindow = [[ADXPassWindow alloc] initWithFrame:CGRectMake(0, 0, screen.width, screen.height)];
+        gWindow = [[UIWindow alloc] initWithFrame:CGRectMake(0, 0, side, side)];
     }
-    gWindow.frame = CGRectMake(0, 0, screen.width, screen.height);   // 铺满全屏，浮球做成子视图
-    gWindow.windowLevel = UIWindowLevelAlert + 1;
-    gWindow.opaque = NO;
-    gWindow.backgroundColor = [UIColor clearColor];
 
-    // 根视图换成透传视图：只有浮球自身会吃掉触摸，其余区域放给下面的游戏
-    UIViewController *host = [UIViewController new];
-    ADXPassView *root = [[ADXPassView alloc] initWithFrame:gWindow.bounds];
-    root.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-    root.opaque = NO;
-    root.backgroundColor = [UIColor clearColor];
-    root.userInteractionEnabled = YES;
-    host.view = root;
-    gWindow.rootViewController = host;
+    // 窗口只有浮球那么大。这是「不挡游戏触控」的关键：
+    // 铺满全屏的窗口即使完全透明，也会把整块屏幕的触摸都拦下来。
+    gWindow.windowLevel = UIWindowLevelAlert + 1;
+    gWindow.frame = CGRectMake(0, 0, side, side);
+    gWindow.backgroundColor = [UIColor clearColor];
+    gWindow.opaque = NO;
+    gWindow.layer.opaque = NO;
+    gWindow.rootViewController = [UIViewController new];
+    gWindow.rootViewController.view.frame = CGRectMake(0, 0, side, side);
+    gWindow.rootViewController.view.backgroundColor = [UIColor clearColor];
+    gWindow.rootViewController.view.opaque = NO;
     gWindow.hidden = NO;
 
     gBall = [[UIView alloc] initWithFrame:CGRectMake(0, 0, side, side)];
-    gBall.layer.masksToBounds = NO;
-    gBall.layer.shadowColor = [UIColor blackColor].CGColor;
-    gBall.layer.shadowOpacity = 0.25;
-    gBall.layer.shadowRadius = 6;
-    gBall.layer.shadowOffset = CGSizeMake(0, 2);
+    gBall.layer.masksToBounds = YES;
+    gBall.layer.borderWidth = 1.0;
+    gBall.layer.borderColor = [[UIColor colorWithWhite:1.0 alpha:0.22] CGColor];
     gBall.userInteractionEnabled = YES;
 
     gBallLabel = [[UILabel alloc] initWithFrame:gBall.bounds];
@@ -567,12 +523,14 @@ static UINavigationController *gB50Nav;
 + (void)pan:(UIPanGestureRecognizer *)g
 {
     CGPoint t = [g translationInView:nil];
-    CGRect b = gWindow.bounds;
-    CGPoint c = gBall.center;
-    CGFloat side = gBall.bounds.size.width;
-    c.x = MAX(side / 2, MIN(c.x + t.x, b.size.width - side / 2));
-    c.y = MAX(side / 2, MIN(c.y + t.y, b.size.height - side / 2));
-    gBall.center = c;
+    CGSize s = gScreenSize;
+    if (s.width < 1 || s.height < 1) s = [UIScreen mainScreen].bounds.size;
+    CGFloat side = gWindow.bounds.size.width;
+    CGPoint c = gWindow.center;
+    c.x = MAX(side / 2, MIN(c.x + t.x, s.width - side / 2));
+    c.y = MAX(side / 2, MIN(c.y + t.y, s.height - side / 2));
+    gWindow.center = c;
+    gBall.frame = CGRectMake(0, 0, side, side);
     [g setTranslation:CGPointZero inView:nil];
 
     if (g.state == UIGestureRecognizerStateEnded || g.state == UIGestureRecognizerStateCancelled)
