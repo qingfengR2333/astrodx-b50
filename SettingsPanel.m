@@ -119,6 +119,8 @@ static UIColor *ColorFromHex(NSString *hex)
 @property (nonatomic, strong) UIImageView *funcChevron;
 @property (nonatomic, strong) UIButton *colorButton;
 @property (nonatomic, strong) UILabel *sticky;
+@property (nonatomic, strong) UIScrollView *scroll;
+@property (nonatomic, strong) UIStackView *stack;
 @property (nonatomic, assign) BOOL ballOpen;
 @property (nonatomic, assign) BOOL funcOpen;
 @property (nonatomic, assign) BOOL colorOpen;
@@ -150,12 +152,14 @@ static UIColor *ColorFromHex(NSString *hex)
     scroll.alwaysBounceVertical = YES;
     scroll.delegate = self;
     [self.view addSubview:scroll];
+    self.scroll = scroll;
 
     UIStackView *stack = [[UIStackView alloc] init];
     stack.axis = UILayoutConstraintAxisVertical;
     stack.spacing = 10;
     stack.translatesAutoresizingMaskIntoConstraints = NO;
     [scroll addSubview:stack];
+    self.stack = stack;
 
     [NSLayoutConstraint activateConstraints:@[
         [scroll.topAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.topAnchor],
@@ -413,7 +417,7 @@ static UIColor *ColorFromHex(NSString *hex)
 
     UIView *accent = [[UIView alloc] init];
     accent.translatesAutoresizingMaskIntoConstraints = NO;
-    accent.backgroundColor = ball ? [UIColor systemBlueColor] : [UIColor systemGreenColor];
+    accent.backgroundColor = [UIColor systemBlueColor];
     accent.layer.cornerRadius = 2;
     [box addSubview:accent];
 
@@ -475,7 +479,8 @@ static UIColor *ColorFromHex(NSString *hex)
     BOOL color = ball && self.colorOpen;
     BOOL func = self.funcOpen;
 
-    [UIView animateWithDuration:0.2 animations:^{
+    // 不做动画：UIStackView 的 hidden 变化带隐式动画时，iPad 上会残留中间态位置
+    [UIView performWithoutAnimation:^{
         for (UIView *v in self.ballViews) v.hidden = !ball;
         for (UIView *v in self.colorViews) v.hidden = !color;
         for (UIView *v in self.funcViews) v.hidden = !func;
@@ -485,8 +490,16 @@ static UIColor *ColorFromHex(NSString *hex)
         [self.colorButton setTitle:(self.colorOpen ? @"颜色 ▾" : @"颜色 ▸")
                           forState:UIControlStateNormal];
 
-        [self.view layoutIfNeeded];
+        [self.stack layoutIfNeeded];
+        [self.scroll layoutIfNeeded];
     }];
+
+    // 收起后内容变短，别让页面停在超出底部的位置
+    CGFloat maxY = self.scroll.contentSize.height - self.scroll.bounds.size.height
+                 + self.scroll.adjustedContentInset.bottom;
+    if (maxY < 0) maxY = 0;
+    if (self.scroll.contentOffset.y > maxY)
+        [self.scroll setContentOffset:CGPointMake(0, maxY) animated:NO];
 }
 
 #pragma mark - 滚动时的板块提示
