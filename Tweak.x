@@ -312,6 +312,37 @@ static UINavigationController *gB50Nav;
     return nil;
 }
 
+/// 屏幕旋转后重新按当前场景尺寸摆浮球 / 面板
++ (void)relayout
+{
+    UIWindowScene *scene = gWindow.windowScene ?: [self activeScene];
+    CGSize s = scene ? scene.coordinateSpace.bounds.size : [UIScreen mainScreen].bounds.size;
+    gScreenSize = s;
+
+    if (gWindow) {
+        CGRect f = gWindow.frame;
+        f.origin.x = MAX(0, MIN(f.origin.x, s.width - f.size.width));
+        f.origin.y = MAX(0, MIN(f.origin.y, s.height - f.size.height));
+        gWindow.frame = f;
+        // 旋转时窗口会重新生成 backing store，这几个开关必须每次都压一遍，
+        // 否则圆球方框的四个角会露出黑底（就是那四个黑方块）
+        gWindow.opaque = NO;
+        gWindow.backgroundColor = [UIColor clearColor];
+        gWindow.rootViewController.view.opaque = NO;
+        gWindow.rootViewController.view.backgroundColor = [UIColor clearColor];
+        [gWindow layoutIfNeeded];
+    }
+
+    if (gPanelWindow) {
+        CGFloat w = MIN(660, s.width - 80);
+        CGFloat h = MIN(780, s.height - 80);
+        gPanelWindow.frame = CGRectMake((s.width - w) / 2, (s.height - h) / 2, w, h);
+        gPanelWindow.opaque = NO;
+        gPanelWindow.backgroundColor = [UIColor clearColor];
+        [gPanelWindow layoutIfNeeded];
+    }
+}
+
 + (UIFont *)fontForBall:(CGFloat)side text:(NSString *)text
 {
     for (CGFloat f = side * 0.42; f > 6; f -= 1) {
@@ -371,7 +402,9 @@ static UINavigationController *gB50Nav;
     gWindow.frame = f;
 
     gBall.frame = CGRectMake(0, 0, side, side);
+    gBall.opaque = NO;
     gBall.layer.cornerRadius = side / 2;
+    gBall.layer.shadowPath = [UIBezierPath bezierPathWithOvalInRect:gBall.bounds].CGPath;
     gBall.backgroundColor = [[ADXSettings color] colorWithAlphaComponent:[ADXSettings alpha]];
 
     gBallLabel.frame = gBall.bounds;
@@ -405,8 +438,10 @@ static UINavigationController *gB50Nav;
         gWindow = [[UIWindow alloc] initWithFrame:frame];
     }
     gWindow.windowLevel = UIWindowLevelAlert + 1;
+    gWindow.opaque = NO;
     gWindow.backgroundColor = [UIColor clearColor];
     gWindow.rootViewController = [UIViewController new];
+    gWindow.rootViewController.view.opaque = NO;
     gWindow.rootViewController.view.backgroundColor = [UIColor clearColor];
     gWindow.hidden = NO;
 
@@ -451,6 +486,17 @@ static UINavigationController *gB50Nav;
                                              selector:@selector(applySettings)
                                                  name:ADXSettingsChangedNotification
                                                object:nil];
+
+    // 旋转 / 尺寸变化：重新摆浮球，并强制窗口保持透明（否则圆球四角会露黑底）
+    [[UIDevice currentDevice] beginGeneratingDeviceOrientationNotifications];
+    for (NSString *n in @[UIDeviceOrientationDidChangeNotification,
+                          UIApplicationDidChangeStatusBarOrientationNotification,
+                          UIWindowDidBecomeKeyNotification]) {
+        [[NSNotificationCenter defaultCenter] addObserver:self
+                                                 selector:@selector(relayout)
+                                                     name:n
+                                                   object:nil];
+    }
 }
 
 + (void)onLongPress:(UILongPressGestureRecognizer *)g
