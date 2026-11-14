@@ -10,6 +10,18 @@ static NSString *FavCoverDir(void)
     return [NSHomeDirectory() stringByAppendingPathComponent:@"Documents/covers"];
 }
 
+// 曲绘内存缓存：多选时反复刷新不再让封面闪一下
+static NSCache *FavCoverCache(void)
+{
+    static NSCache *cache;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        cache = [[NSCache alloc] init];
+        cache.countLimit = 200;
+    });
+    return cache;
+}
+
 #pragma mark - 存储
 
 @implementation ADXChartFav
@@ -148,6 +160,8 @@ static NSString *FavCoverDir(void)
 @property (nonatomic, assign) BOOL selecting;
 @property (nonatomic, assign) NSInteger dragStart;
 @property (nonatomic, copy) void (^openBlock)(int songId);
+@property (nonatomic, strong) UIButton *sortButton;
+@property (nonatomic, assign) NSInteger sortMode;      // 0 默认 1 名称 2 版本
 @end
 
 @implementation ADXChartFavSheet
@@ -198,6 +212,15 @@ static NSString *FavCoverDir(void)
     title.font = [UIFont systemFontOfSize:17 weight:UIFontWeightBold];
     [card addSubview:title];
     self.titleLabel = title;
+
+    // 排序按钮（贴在标题右侧）
+    UIButton *sort = [UIButton buttonWithType:UIButtonTypeSystem];
+    sort.frame = CGRectMake(96, 12, 30, 26);
+    [sort setImage:[UIImage systemImageNamed:@"line.3.horizontal.decrease"] forState:UIControlStateNormal];
+    sort.tintColor = [UIColor secondaryLabelColor];
+    sort.showsMenuAsPrimaryAction = YES;
+    [card addSubview:sort];
+    self.sortButton = sort;
 
     // 右上角：关闭 / 全选 / 选择
     UIButton *close = [UIButton buttonWithType:UIButtonTypeSystem];
@@ -300,11 +323,59 @@ static NSString *FavCoverDir(void)
         if (s) [list addObject:s];
     }
     self.all = list;
-    self.songs = list;
-    [self.table reloadData];
+    [self applySort];
 
-    self.empty.hidden = (list.count > 0);
+    self.empty.hidden = (self.all.count > 0);
     self.empty.text = @"还没有收藏的曲目";
+}
+
+#pragma mark - 排序
+
+- (void)applySort
+{
+    NSArray *src = self.all;
+    NSInteger mode = self.sortMode;
+
+    if (mode == 1) {
+        src = [src sortedArrayUsingComparator:^NSComparisonResult(NSArray *a, NSArray *b) {
+            return [(NSString *)a[1] localizedStandardCompare:(NSString *)b[1]];
+        }];
+    } else if (mode == 2) {
+        src = [src sortedArrayUsingComparator:^NSComparisonResult(NSArray *a, NSArray *b) {
+            int va = [a[5] intValue];      // 国服版本码，日服独有为 0
+            int vb = [b[5] intValue];
+            if (va == 0 && vb != 0) return NSOrderedDescending;
+            if (vb == 0 && va != 0) return NSOrderedAscending;
+            if (va != vb) return va < vb ? NSOrderedAscending : NSOrderedDescending;
+            return [(NSString *)a[1] localizedStandardCompare:(NSString *)b[1]];
+        }];
+    }
+
+    self.songs = src;
+    [self.table reloadData];
+}
+
+- (UIMenu *)sortMenu
+{
+    NSArray *names = @[@"默认排序", @"按名称排序", @"按版本排序"];
+    NSMutableArray *items = [NSMutableArray arrayWithCapacity:names.count];
+    __weak __typeof(self) weakSelf = self;
+
+    for (NSInteger i = 0; i < (NSInteger)names.count; i++) {
+        UIAction *a = [UIAction actionWithTitle:names[i] image:nil identifier:nil
+                                        handler:^(UIAction *act) {
+            __typeof(weakSelf) me = weakSelf;
+            if (!me) return;
+            me.sortMode = [names indexOfObject:act.title];
+            [UIView performWithoutAnimation:^{
+                [me applySort];
+            }];
+            [me refreshHeader];
+        }];
+        a.state = (i == self.sortMode) ? UIMenuElementStateOn : UIMenuElementStateOff;
+        [items addObject:a];
+    }
+    return [UIMenu menuWithChildren:items];
 }
 
 - (void)refreshHeader
@@ -314,6 +385,12 @@ static NSString *FavCoverDir(void)
     self.titleLabel.text = self.selecting
         ? [NSString stringWithFormat:@"已选 %lu 项", (unsigned long)self.picked.count]
         : @"收藏夹";
+
+    // 排序按钮跟着标题宽度走
+    CGFloat tw = [self.titleLabel sizeThatFits:CGSizeMake(400, 30)].width;
+    self.sortButton.frame = CGRectMake(20 + ceil(tw) + 8, 12, 30, 26);
+    self.sortButton.hidden = self.selecting;
+    self.sortButton.menu = [self sortMenu];
 }
 
 - (void)setSelectingMode:(BOOL)on
@@ -325,12 +402,15 @@ static NSString *FavCoverDir(void)
     CGFloat h = self.card.bounds.size.height;
     CGFloat barH = on ? 60 : 0;
 
-    self.bottomBar.hidden = !on;
-    self.bottomBar.frame = CGRectMake(0, h - barH, w, barH);
-    self.table.frame = CGRectMake(0, 50, w, h - 50 - barH);
-    self.table.allowsMultipleSelection = NO;
-    [self.table reloadData];
-    [self refreshHeader];
+    // 关掉隐式动画，避免「选择/完成」切换时整块渐隐渐显
+    [UIView performWithoutAnimation:^{
+        self.bottomBar.hidden = !on;
+        self.bottomBar.frame = CGRectMake(0, h - barH, w, barH);
+        self.table.frame = CGRectMake(0, 50, w, h - 50 - barH);
+        [self.table reloadData];
+        [self refreshHeader];
+        [self.card layoutIfNeeded];
+    }];
 }
 
 - (void)toggleSelecting
@@ -345,8 +425,20 @@ static NSString *FavCoverDir(void)
     } else {
         for (NSArray *s in self.songs) [self.picked addObject:s[0]];
     }
-    [self.table reloadData];
+    [self refreshChecks];
     [self refreshHeader];
+}
+
+/// 只刷新可见行的勾选状态，不整表 reload（避免曲绘闪烁）
+- (void)refreshChecks
+{
+    for (UITableViewCell *c in self.table.visibleCells) {
+        if (![c isKindOfClass:[ADXFavCell class]]) continue;
+        NSIndexPath *ip = [self.table indexPathForCell:c];
+        if (!ip || ip.row >= (NSInteger)self.songs.count) continue;
+        NSArray *s = self.songs[ip.row];
+        [(ADXFavCell *)c setChecked:[self.picked containsObject:s[0]] selecting:self.selecting];
+    }
 }
 
 - (void)refreshTapped
@@ -381,7 +473,7 @@ static NSString *FavCoverDir(void)
 
         [self.picked removeAllObjects];
         [self.picked addObject:self.songs[ip.row][0]];
-        [self.table reloadData];
+        [self refreshChecks];
         [self refreshHeader];
         self.dragStart = ip.row;
         return;
@@ -398,7 +490,7 @@ static NSString *FavCoverDir(void)
         for (NSInteger i = a; i <= b && i < (NSInteger)self.songs.count; i++) {
             if (i >= 0) [self.picked addObject:self.songs[i][0]];
         }
-        [self.table reloadData];
+        [self refreshChecks];
         [self refreshHeader];
     }
 }
@@ -422,14 +514,18 @@ static NSString *FavCoverDir(void)
 
     int sid = [s[0] intValue];
     NSString *url = [ADXChartDb coverURL:s];
-    cell.cover.image = nil;
     cell.cover.tag = sid;
+
+    UIImage *cached = [FavCoverCache() objectForKey:@(sid)];
+    cell.cover.image = cached;          // 有缓存就直接用，选中切换时不会闪
+    if (cached) return cell;
 
     __weak ADXFavCell *weakCell = cell;
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
         UIImage *img = url.length ? [ADXImage coverImageFor:sid url:url dir:FavCoverDir()]
                                   : [ADXImage coverImageFor:sid dir:FavCoverDir()];
         if (!img) return;
+        [FavCoverCache() setObject:img forKey:@(sid)];
         dispatch_async(dispatch_get_main_queue(), ^{
             if (weakCell.cover.tag == sid) weakCell.cover.image = img;
         });
@@ -457,7 +553,7 @@ static NSString *FavCoverDir(void)
         id key = s[0];
         if ([self.picked containsObject:key]) [self.picked removeObject:key];
         else [self.picked addObject:key];
-        [tableView reloadData];
+        [self refreshChecks];
         [self refreshHeader];
         return;
     }
