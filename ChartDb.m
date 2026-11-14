@@ -321,12 +321,27 @@ enum {
     return [n isKindOfClass:[NSString class]] ? n : @"";
 }
 
-/// 日服独有曲目的曲绘直链
+/// 曲绘直链：优先用曲库里存的（日服独有），其余按 adxdls 的文件规则现场拼
+/// 规则：https://astrodx-charts.saop.cc/<日服版本下标>/<界面编号>/bg.png
 + (NSString *)coverURL:(NSArray *)song
 {
     if (song.count <= ADXSongCover) return @"";
+
     id u = song[ADXSongCover];
-    return ([u isKindOfClass:[NSString class]] && [u length]) ? u : @"";
+    if ([u isKindOfClass:[NSString class]] && [u length]) return u;
+
+    BOOL dx = [self hasDx:song];
+    NSInteger vDx = [song[ADXSongJpDx] integerValue];
+    NSInteger vSd = [song[ADXSongJpStd] integerValue];
+    NSInteger ver = dx ? vDx : vSd;
+    if (ver < 0) ver = dx ? vSd : vDx;          // 另一边有也行，曲绘是同一张
+    if (ver < 0) return @"";                    // 没匹配到 adxdls，交给 diving-fish
+
+    int sid = [song[ADXSongId] intValue];
+    int shortId = [self isJpOnly:song] ? sid - 900000 : (dx ? sid + 10000 : sid);
+    if (shortId <= 0) return @"";
+
+    return [NSString stringWithFormat:@"https://astrodx-charts.saop.cc/%d/%d/bg.png", (int)ver, shortId];
 }
 
 /// 「国服/日服」双写；两边一样就只写一次

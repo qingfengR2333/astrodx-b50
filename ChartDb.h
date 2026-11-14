@@ -35,7 +35,7 @@
 /// 日服分类，如「POPS＆アニメ」；没有返回空串
 + (NSString *)jpGenreName:(NSArray *)song;
 
-/// 日服独有曲目的曲绘直链
+/// 曲绘直链（adxdls；没有就返回空串，交给 diving-fish）
 + (NSString *)coverURL:(NSArray *)song;
 
 /// 「国服/日服」双写文本

@@ -1,5 +1,6 @@
 // B50Image.m — 1600×1502 的 B50 图，版式严格对齐最早的 PC 版
 #import "B50Image.h"
+#import "ChartDb.h"
 
 static const CGFloat kPageW = 1600;
 static const CGFloat kMargin = 36;
@@ -133,7 +134,7 @@ static void FillRoundGradient(CGRect r, CGFloat radius, UIColor *top, UIColor *b
     return [UIImage imageWithContentsOfFile:path];
 }
 
-/// 日服独有曲目没有官方编号，直接按直链下载（缓存文件名仍用歌曲 id）
+/// 日服独有曲目没有官方编号，直接按直链下载（缓存文件名仍用歌曲 id）；直链失败再退回 diving-fish
 + (UIImage *)coverImageFor:(int)songId url:(NSString *)url dir:(NSString *)dir
 {
     if (songId <= 0 || !dir.length) return nil;
@@ -141,9 +142,15 @@ static void FillRoundGradient(CGRect r, CGFloat radius, UIColor *top, UIColor *b
     NSString *path = [self coverPath:dir songId:songId];
     UIImage *img = [UIImage imageWithContentsOfFile:path];
     if (img) return img;
-    if (!url.length) return nil;
 
-    [self downloadURL:url to:path timeout:10];
+    if (url.length) {
+        [self downloadURL:url to:path timeout:10];
+        img = [UIImage imageWithContentsOfFile:path];
+        if (img) return img;
+    }
+
+    // adxdls 上没有（或线路挂了）就退回 diving-fish
+    if (![self downloadCover:songId to:dir]) return nil;
     return [UIImage imageWithContentsOfFile:path];
 }
 
@@ -214,10 +221,12 @@ static void FillRoundGradient(CGRect r, CGFloat radius, UIColor *top, UIColor *b
         for (ADXEntry *e in all) {
             if (e.songId <= 0) continue;
             if ([[NSFileManager defaultManager] fileExistsAtPath:[self coverPath:dir songId:e.songId]]) continue;
+            NSString *url = [ADXChartDb coverURL:[ADXChartDb songById:e.songId]];
             dispatch_semaphore_wait(limit, DISPATCH_TIME_FOREVER);
             dispatch_group_enter(group);
             dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
-                [self downloadCover:e.songId to:dir];
+                if (url.length) [self coverImageFor:e.songId url:url dir:dir];
+                else [self downloadCover:e.songId to:dir];
                 dispatch_semaphore_signal(limit);
                 dispatch_group_leave(group);
             });
@@ -414,6 +423,11 @@ static void FillRoundGradient(CGRect r, CGFloat radius, UIColor *top, UIColor *b
     UIImage *img = nil;
     if (e.songId > 0)
         img = [UIImage imageWithContentsOfFile:[self coverPath:dir songId:e.songId]];
+    if (!img && e.songId > 0) {
+        // 缓存里没有（多半是 diving-fish 没这首）→ 现场按 adxdls 直链补一次
+        NSString *url = [ADXChartDb coverURL:[ADXChartDb songById:e.songId]];
+        if (url.length) img = [self coverImageFor:e.songId url:url dir:dir];
+    }
 
     CGContextSaveGState(cg);
     [clip addClip];
