@@ -119,7 +119,9 @@ static NSCache *FavCoverCache(void)
 {
     [super layoutSubviews];
     CGFloat w = self.contentView.bounds.size.width;
-    CGFloat right = self.accessoryView ? 40 : 16;
+    BOOL arrow = (self.accessoryView == nil &&
+                  self.accessoryType == UITableViewCellAccessoryDisclosureIndicator);
+    CGFloat right = self.accessoryView ? 40 : (arrow ? 34 : 16);
     self.name.frame = CGRectMake(64, 9, w - 64 - right, 19);
     self.sub.frame = CGRectMake(64, 28, w - 64 - right, 17);
 }
@@ -129,10 +131,13 @@ static NSCache *FavCoverCache(void)
     if (!selecting) {
         self.check.hidden = YES;
         self.accessoryView = nil;
+        self.accessoryType = UITableViewCellAccessoryDisclosureIndicator;   // 和 B50 列表一样的 ›
+        [self setNeedsLayout];
         return;
     }
     self.check.hidden = NO;
-    self.accessoryView = self.check;
+    self.accessoryView = self.check;      // accessoryView 会接管，箭头自动消失
+    self.accessoryType = UITableViewCellAccessoryNone;
     self.check.image = [UIImage systemImageNamed:(on ? @"checkmark.circle.fill" : @"circle")];
     self.check.tintColor = on ? [UIColor systemBlueColor] : [UIColor tertiaryLabelColor];
 }
