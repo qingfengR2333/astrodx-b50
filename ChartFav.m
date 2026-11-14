@@ -1,4 +1,4 @@
-// ChartFav.m — 收藏夹存储 + 收藏夹弹窗（资源管理式多选：选择/完成、全选、删除、刷新、长按拖动）
+// ChartFav.m — 收藏夹存储 + 收藏夹弹窗（资源管理式多选：选择/完成、全选、删除、长按拖动）
 #import "ChartFav.h"
 #import "ChartDb.h"
 #import "B50Image.h"
@@ -150,7 +150,6 @@ static NSCache *FavCoverCache(void)
 @property (nonatomic, strong) UIButton *selectButton;
 @property (nonatomic, strong) UIButton *allButton;
 @property (nonatomic, strong) UIView *bottomBar;
-@property (nonatomic, strong) UIButton *refreshButton;
 @property (nonatomic, strong) UIButton *deleteButton;
 
 @property (nonatomic, copy) NSArray *all;              // 收藏的全部曲目
@@ -163,6 +162,8 @@ static NSCache *FavCoverCache(void)
 @property (nonatomic, assign) NSInteger sortMode;      // 0 默认 1 名称 2 版本
 @property (nonatomic, strong) NSMutableSet *dragBase;  // 开始拖动时已有的选中项
 @property (nonatomic, assign) CGPoint dragPoint;       // 手指在 table 内容坐标系里的位置
+@property (nonatomic, assign) CGPoint dragOrigin;      // 按下时的位置（判断有没有真的拖动）
+@property (nonatomic, assign) BOOL dragged;            // 手指移动超过阈值后才允许边缘滚动
 @property (nonatomic, assign) CGFloat scrollSpeed;     // 边缘自动滚动速度（pt/帧）
 @property (nonatomic, strong) CADisplayLink *link;
 @end
@@ -260,16 +261,6 @@ static NSCache *FavCoverCache(void)
     barLine.backgroundColor = [UIColor separatorColor];
     [bar addSubview:barLine];
 
-    CGFloat btnW = (w - 32 - 12) / 2;
-    UIButton *refresh = [UIButton buttonWithType:UIButtonTypeSystem];
-    refresh.backgroundColor = [UIColor secondarySystemBackgroundColor];
-    refresh.layer.cornerRadius = 10;
-    [refresh setTitle:@"刷新" forState:UIControlStateNormal];
-    refresh.titleLabel.font = [UIFont systemFontOfSize:15 weight:UIFontWeightMedium];
-    [refresh addTarget:self action:@selector(refreshTapped) forControlEvents:UIControlEventTouchUpInside];
-    [bar addSubview:refresh];
-    self.refreshButton = refresh;
-
     UIButton *del = [UIButton buttonWithType:UIButtonTypeSystem];
     del.backgroundColor = [UIColor systemRedColor];
     del.layer.cornerRadius = 10;
@@ -280,8 +271,8 @@ static NSCache *FavCoverCache(void)
     [bar addSubview:del];
     self.deleteButton = del;
 
-    refresh.frame = CGRectMake(16, 9, btnW, 42);
-    del.frame = CGRectMake(16 + btnW + 12, 9, btnW, 42);
+    // 只剩「删除」，拉通整条底栏（左右各留 16、上下各留 9）
+    del.frame = CGRectMake(16, 9, w - 32, 42);
 
     UITableView *table = [[UITableView alloc] initWithFrame:CGRectMake(0, 50, w, h - 50)
                                                       style:UITableViewStylePlain];
@@ -445,15 +436,6 @@ static NSCache *FavCoverCache(void)
     }
 }
 
-- (void)refreshTapped
-{
-    [self reloadFavs];
-    if (self.selecting) {
-        [self.picked removeAllObjects];
-        [self refreshHeader];
-    }
-}
-
 - (void)deleteTapped
 {
     if (self.picked.count == 0) return;
@@ -479,16 +461,24 @@ static NSCache *FavCoverCache(void)
         self.dragBase = [NSMutableSet setWithSet:self.picked];
         self.dragStart = ip.row;
         self.dragPoint = p;
+        self.dragOrigin = p;
+        self.dragged = NO;          // 只是长按、还没滑动 → 不许自动滚动
         [self updateSelectionAtPoint:p];
-        [self updateAutoScroll];
         return;
     }
 
     if (g.state == UIGestureRecognizerStateChanged) {
         if (!self.selecting) return;
         self.dragPoint = p;
+
+        if (!self.dragged) {
+            CGFloat dx = p.x - self.dragOrigin.x;
+            CGFloat dy = p.y - self.dragOrigin.y;
+            if (sqrt(dx * dx + dy * dy) > 8.0) self.dragged = YES;
+        }
+
         [self updateSelectionAtPoint:p];
-        [self updateAutoScroll];
+        if (self.dragged) [self updateAutoScroll];
         return;
     }
 
@@ -522,6 +512,7 @@ static NSCache *FavCoverCache(void)
 // 手指靠近上下边缘就开始自动滚动，越贴边越快（最多 14pt/帧）
 - (void)updateAutoScroll
 {
+    if (!self.dragged) { [self stopAutoScroll]; return; }   // 没滑动就不滚
     CGFloat h = self.table.bounds.size.height;
     CGFloat y = self.dragPoint.y - self.table.contentOffset.y;   // 手指在可视区里的相对位置
     CGFloat edge = 56.0, speed = 0;
