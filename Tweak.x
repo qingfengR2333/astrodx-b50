@@ -10,6 +10,38 @@
 #import "ChartDb.h"
 #import <math.h>
 
+#pragma mark - 透传视图
+
+// 浮球窗口铺满全屏。如果它的根视图照常参与命中测试，游戏本身会完全点不动；
+// 这里让根视图「只有点到浮球时才命中」，其余位置返回 nil，触摸继续落到下面的游戏窗口。
+@interface ADXPassView : UIView
+@end
+
+@implementation ADXPassView
+
+- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event
+{
+    UIView *v = [super hitTest:point withEvent:event];
+    return (v == self) ? nil : v;
+}
+
+@end
+
+// UIView 的默认实现「没有子视图命中就返回自己」，窗口也一样——
+// 所以窗口也得透传，否则点到空白处会停在窗口上，游戏收不到事件。
+@interface ADXPassWindow : UIWindow
+@end
+
+@implementation ADXPassWindow
+
+- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event
+{
+    UIView *v = [super hitTest:point withEvent:event];
+    return (v == self) ? nil : v;
+}
+
+@end
+
 #pragma mark - 颜色
 
 static UIColor *ADXDiffColor(int d)
@@ -453,17 +485,24 @@ static UINavigationController *gB50Nav;
     CGFloat side = 56;
 
     if (scene) {
-        gWindow = [[UIWindow alloc] initWithWindowScene:scene];
+        gWindow = [[ADXPassWindow alloc] initWithWindowScene:scene];
     } else {
-        gWindow = [[UIWindow alloc] initWithFrame:CGRectMake(0, 0, screen.width, screen.height)];
+        gWindow = [[ADXPassWindow alloc] initWithFrame:CGRectMake(0, 0, screen.width, screen.height)];
     }
     gWindow.frame = CGRectMake(0, 0, screen.width, screen.height);   // 铺满全屏，浮球做成子视图
     gWindow.windowLevel = UIWindowLevelAlert + 1;
     gWindow.opaque = NO;
     gWindow.backgroundColor = [UIColor clearColor];
-    gWindow.rootViewController = [UIViewController new];
-    gWindow.rootViewController.view.opaque = NO;
-    gWindow.rootViewController.view.backgroundColor = [UIColor clearColor];
+
+    // 根视图换成透传视图：只有浮球自身会吃掉触摸，其余区域放给下面的游戏
+    UIViewController *host = [UIViewController new];
+    ADXPassView *root = [[ADXPassView alloc] initWithFrame:gWindow.bounds];
+    root.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    root.opaque = NO;
+    root.backgroundColor = [UIColor clearColor];
+    root.userInteractionEnabled = YES;
+    host.view = root;
+    gWindow.rootViewController = host;
     gWindow.hidden = NO;
 
     gBall = [[UIView alloc] initWithFrame:CGRectMake(0, 0, side, side)];
