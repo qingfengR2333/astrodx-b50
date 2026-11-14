@@ -30,7 +30,7 @@
     hint.text = @"支持两种 .zip，可以多选：\n"
                  @"  · 单个谱面 / 皮肤 → 解压成 Documents/levels/<曲名>/、Documents/skins/<皮肤名>/\n"
                  @"  · 谱包（一个 zip 里装着很多 zip）→ 自动逐个解压，每个谱面一个独立文件夹\n"
-                 @"全是本地解压，不联网。导入完回到游戏，重开 App 或刷新曲库即可看到。";
+                 @"导入完回到游戏，重开 App 或刷新曲库即可看到。";
     [stack addArrangedSubview:hint];
 
     // 钢蓝 #4682B4 提亮 40% ≈ #91B1D0

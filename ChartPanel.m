@@ -147,6 +147,19 @@ static UIColor *DiffColor(NSInteger d)
     l.tag = 902;
     [self.emptyView addSubview:l];
 
+    // 还没选歌时也能直接进收藏夹
+    UIButton *fav = [UIButton buttonWithType:UIButtonTypeSystem];
+    [fav setTitle:@"收藏夹" forState:UIControlStateNormal];
+    fav.titleLabel.font = [UIFont systemFontOfSize:14 weight:UIFontWeightMedium];
+    [fav setTitleColor:[UIColor labelColor] forState:UIControlStateNormal];
+    fav.backgroundColor = [UIColor secondarySystemGroupedBackgroundColor];
+    fav.layer.cornerRadius = 10;
+    fav.layer.borderWidth = 0.5;
+    fav.layer.borderColor = [UIColor separatorColor].CGColor;
+    fav.tag = 903;
+    [fav addTarget:self action:@selector(openFavorites) forControlEvents:UIControlEventTouchUpInside];
+    [self.emptyView addSubview:fav];
+
     [self addSubview:self.emptyView];
 }
 
@@ -168,9 +181,11 @@ static UIColor *DiffColor(NSInteger d)
 
     UIView *icon = [self.emptyView viewWithTag:901];
     UILabel *tip = (UILabel *)[self.emptyView viewWithTag:902];
-    CGFloat cy = CGRectGetMidY(self.emptyView.bounds) - 40;
+    UIButton *favBtn = (UIButton *)[self.emptyView viewWithTag:903];
+    CGFloat cy = CGRectGetMidY(self.emptyView.bounds) - 60;
     icon.frame = CGRectMake((W - 44) / 2, cy, 44, 44);
     tip.frame = CGRectMake(16, cy + 60, W - 32, 22);
+    favBtn.frame = CGRectMake((W - 128) / 2, cy + 92, 128, 38);
 
     CGFloat sh = MIN(self.hits.count * 58.0, 320.0);
     self.suggest.frame = CGRectMake(16, CGRectGetMaxY(self.search.frame) - 3, W - 32, sh);

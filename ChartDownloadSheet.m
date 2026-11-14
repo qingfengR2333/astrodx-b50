@@ -61,6 +61,7 @@ static UIColor *LatencyColor(NSInteger ms)
 @property (nonatomic, assign) BOOL panelOpen;
 @property (nonatomic, assign) BOOL running;
 @property (nonatomic, assign) NSInteger line;
+@property (nonatomic, copy) NSString *lastPath;          // 上次成功导入的文件夹，导出直接复用它
 @property (nonatomic, strong) NSMutableArray *dots;      // 每个线路的小圆点
 @property (nonatomic, strong) NSMutableArray *checks;    // 每个线路的 ✓
 @property (nonatomic, strong) NSMutableArray *latency;   // NSNumber，-1 未知 / -2 不可用
@@ -143,20 +144,20 @@ static UIColor *LatencyColor(NSInteger ms)
     title.font = [UIFont systemFontOfSize:17 weight:UIFontWeightBold];
     [card addSubview:title];
 
-    // 右上角：关闭 + 导出
-    self.exportButton = [UIButton buttonWithType:UIButtonTypeSystem];
-    self.exportButton.frame = CGRectMake(w - pad - 44, 12, 44, 32);
-    [self.exportButton setTitle:@"导出" forState:UIControlStateNormal];
-    self.exportButton.titleLabel.font = [UIFont systemFontOfSize:15];
-    [self.exportButton addTarget:self action:@selector(exportTapped) forControlEvents:UIControlEventTouchUpInside];
-    [card addSubview:self.exportButton];
-
+    // 右上角：谱面导出 + 关闭（关闭在最右）
     UIButton *closeBtn = [UIButton buttonWithType:UIButtonTypeSystem];
-    closeBtn.frame = CGRectMake(w - pad - 44 - 52, 12, 48, 32);
+    closeBtn.frame = CGRectMake(w - pad - 48, 12, 48, 32);
     [closeBtn setTitle:@"关闭" forState:UIControlStateNormal];
     closeBtn.titleLabel.font = [UIFont systemFontOfSize:15];
     [closeBtn addTarget:self action:@selector(close) forControlEvents:UIControlEventTouchUpInside];
     [card addSubview:closeBtn];
+
+    self.exportButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    self.exportButton.frame = CGRectMake(w - pad - 48 - 84, 12, 80, 32);
+    [self.exportButton setTitle:@"谱面导出" forState:UIControlStateNormal];
+    self.exportButton.titleLabel.font = [UIFont systemFontOfSize:15];
+    [self.exportButton addTarget:self action:@selector(exportTapped) forControlEvents:UIControlEventTouchUpInside];
+    [card addSubview:self.exportButton];
 
     UIView *line = [[UIView alloc] initWithFrame:CGRectMake(0, 52, w, 0.5)];
     line.backgroundColor = [UIColor separatorColor];
@@ -535,7 +536,59 @@ static UIColor *LatencyColor(NSInteger ms)
 
 - (void)exportTapped
 {
+    // 已经下载并导入过，直接打包那份文件，不重复下载
+    NSFileManager *fm = [NSFileManager defaultManager];
+    NSString *src = self.lastPath;
+
+    if (src.length == 0 || ![fm fileExistsAtPath:src]) {
+        // 重开面板时按惯例路径找一次，避免再下一遍
+        NSString *cand = [NSHomeDirectory() stringByAppendingPathComponent:
+                          [NSString stringWithFormat:@"Documents/levels/%@", [self folderName]]];
+        if ([fm fileExistsAtPath:cand]) src = cand;
+    }
+
+    if (src.length && [fm fileExistsAtPath:src]) {
+        [self exportFolder:src];
+        return;
+    }
     [self beginWithExport:YES];
+}
+
+- (void)exportFolder:(NSString *)folder
+{
+    if (self.running) return;
+    self.running = YES;
+
+    self.startButton.enabled = NO;
+    self.goButton.enabled = NO;
+    self.optButton.enabled = NO;
+    self.exportButton.enabled = NO;
+    self.bar.hidden = NO;
+    self.statusLabel.hidden = NO;
+    self.bar.progress = 0;
+    self.statusLabel.text = @"正在打包…";
+    [self layoutCard];
+
+    __weak __typeof(self) weakSelf = self;
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        NSString *exports = [NSHomeDirectory() stringByAppendingPathComponent:@"Documents/exports"];
+        [[NSFileManager defaultManager] createDirectoryAtPath:exports
+                                  withIntermediateDirectories:YES attributes:nil error:nil];
+
+        NSString *name = [folder lastPathComponent];
+        NSString *zipPath = [[exports stringByAppendingPathComponent:name] stringByAppendingPathExtension:@"zip"];
+        zipPath = [ADXChartDownloadSheet uniquePath:zipPath];
+
+        NSError *zerr = nil;
+        BOOL ok = [ADXZip zipDirectory:folder to:zipPath error:&zerr];
+
+        if (!ok) {
+            [weakSelf finishWithText:[NSString stringWithFormat:@"打包失败：%@", zerr.localizedDescription ?: @"未知"]];
+            return;
+        }
+        [weakSelf finishWithText:[NSString stringWithFormat:@"已导出 %@", [zipPath lastPathComponent]]];
+        dispatch_async(dispatch_get_main_queue(), ^{ [weakSelf shareFile:zipPath]; });
+    });
 }
 
 - (void)beginWithExport:(BOOL)exporting
@@ -673,6 +726,7 @@ static UIColor *LatencyColor(NSInteger ms)
     [[NSFileManager defaultManager] removeItemAtPath:tmpRoot error:nil];
 
     if (moved) {
+        self.lastPath = finalPath;
         [self finishWithText:[NSString stringWithFormat:@"已导入 levels/%@", [finalPath lastPathComponent]]];
     } else {
         [self finishWithText:[NSString stringWithFormat:@"导入失败：%@", moveErr.localizedDescription ?: @"未知"]];
