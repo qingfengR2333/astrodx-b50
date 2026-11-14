@@ -320,17 +320,13 @@ static UINavigationController *gB50Nav;
     gScreenSize = s;
 
     if (gWindow) {
-        CGRect f = gWindow.frame;
-        f.origin.x = MAX(0, MIN(f.origin.x, s.width - f.size.width));
-        f.origin.y = MAX(0, MIN(f.origin.y, s.height - f.size.height));
-        gWindow.frame = f;
-        // 旋转时窗口会重新生成 backing store，这几个开关必须每次都压一遍，
-        // 否则圆球方框的四个角会露出黑底（就是那四个黑方块）
+        gWindow.frame = CGRectMake(0, 0, s.width, s.height);
         gWindow.opaque = NO;
         gWindow.backgroundColor = [UIColor clearColor];
         gWindow.rootViewController.view.opaque = NO;
         gWindow.rootViewController.view.backgroundColor = [UIColor clearColor];
         [gWindow layoutIfNeeded];
+        [self applySettings];          // 重新按新尺寸夹一次浮球位置
     }
 
     if (gPanelWindow) {
@@ -393,15 +389,20 @@ static UINavigationController *gB50Nav;
     if (!gWindow || !gBall) return;
 
     CGFloat side = [ADXSettings size];
-    CGRect f = gWindow.frame;
-    CGPoint center = CGPointMake(CGRectGetMidX(f), CGRectGetMidY(f));
-    f.size = CGSizeMake(side, side);
-    f.origin = CGPointMake(center.x - side / 2, center.y - side / 2);
-    f.origin.x = MAX(0, MIN(f.origin.x, gScreenSize.width - side));
-    f.origin.y = MAX(0, MIN(f.origin.y, gScreenSize.height - side));
-    gWindow.frame = f;
 
-    gBall.frame = CGRectMake(0, 0, side, side);
+    // 窗口始终铺满全屏，浮球是里面的一个子视图。
+    // 之前是「窗口只有 56×56」，旋转时 UIKit 会按旧尺寸重建窗口，
+    // 圆球外面那圈方形就被涂成黑底，于是出现四个黑方块。
+    CGRect b = gWindow.bounds;
+    if (b.size.width < 1 || b.size.height < 1) b = CGRectMake(0, 0, gScreenSize.width, gScreenSize.height);
+
+    CGPoint c = gBall.center;
+    if (c.x < 1 && c.y < 1) c = CGPointMake(b.size.width - side / 2 - 12, b.size.height * 0.35);
+    c.x = MAX(side / 2, MIN(c.x, b.size.width - side / 2));
+    c.y = MAX(side / 2, MIN(c.y, b.size.height - side / 2));
+
+    gBall.bounds = CGRectMake(0, 0, side, side);
+    gBall.center = c;
     gBall.opaque = NO;
     gBall.layer.cornerRadius = side / 2;
     gBall.layer.shadowPath = [UIBezierPath bezierPathWithOvalInRect:gBall.bounds].CGPath;
@@ -429,14 +430,13 @@ static UINavigationController *gB50Nav;
     gScreenSize = screen;
 
     CGFloat side = 56;
-    CGRect frame = CGRectMake(screen.width - side - 12, screen.height * 0.35, side, side);
 
     if (scene) {
         gWindow = [[UIWindow alloc] initWithWindowScene:scene];
-        gWindow.frame = frame;
     } else {
-        gWindow = [[UIWindow alloc] initWithFrame:frame];
+        gWindow = [[UIWindow alloc] initWithFrame:CGRectMake(0, 0, screen.width, screen.height)];
     }
+    gWindow.frame = CGRectMake(0, 0, screen.width, screen.height);   // 铺满全屏，浮球做成子视图
     gWindow.windowLevel = UIWindowLevelAlert + 1;
     gWindow.opaque = NO;
     gWindow.backgroundColor = [UIColor clearColor];
@@ -507,12 +507,12 @@ static UINavigationController *gB50Nav;
 + (void)pan:(UIPanGestureRecognizer *)g
 {
     CGPoint t = [g translationInView:nil];
-    CGRect f = gWindow.frame;
-    CGFloat maxX = gScreenSize.width - f.size.width;
-    CGFloat maxY = gScreenSize.height - f.size.height;
-    f.origin.x = MAX(0, MIN(f.origin.x + t.x, maxX));
-    f.origin.y = MAX(0, MIN(f.origin.y + t.y, maxY));
-    gWindow.frame = f;
+    CGRect b = gWindow.bounds;
+    CGPoint c = gBall.center;
+    CGFloat side = gBall.bounds.size.width;
+    c.x = MAX(side / 2, MIN(c.x + t.x, b.size.width - side / 2));
+    c.y = MAX(side / 2, MIN(c.y + t.y, b.size.height - side / 2));
+    gBall.center = c;
     [g setTranslation:CGPointZero inView:nil];
 }
 
