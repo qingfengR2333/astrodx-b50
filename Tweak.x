@@ -396,8 +396,15 @@ static UINavigationController *gB50Nav;
     CGRect b = gWindow.bounds;
     if (b.size.width < 1 || b.size.height < 1) b = CGRectMake(0, 0, gScreenSize.width, gScreenSize.height);
 
-    CGPoint c = gBall.center;
-    if (c.x < 1 && c.y < 1) c = CGPointMake(b.size.width - side / 2 - 12, b.size.height * 0.35);
+    CGPoint c;
+    NSUserDefaults *ud = [NSUserDefaults standardUserDefaults];
+    if ([ud objectForKey:@"adx.ballPosX"] != nil) {
+        // 存的是归一化坐标（0~1），换方向、换屏幕尺寸都还能落在相对位置
+        c = CGPointMake([ud doubleForKey:@"adx.ballPosX"] * b.size.width,
+                        [ud doubleForKey:@"adx.ballPosY"] * b.size.height);
+    } else {
+        c = CGPointMake(b.size.width - side / 2 - 12, b.size.height * 0.35);
+    }
     c.x = MAX(side / 2, MIN(c.x, b.size.width - side / 2));
     c.y = MAX(side / 2, MIN(c.y, b.size.height - side / 2));
 
@@ -419,6 +426,20 @@ static UINavigationController *gB50Nav;
     gTapOnce.enabled = (t == 0);
     gTapTwice.enabled = (t == 1);
     gLongPress.enabled = (t == 2);
+
+    [self saveBallPos];
+}
+
+/// 把浮球当前位置按「占屏幕的比例」存下来，下次启动 / 换方向都能回到同一处
++ (void)saveBallPos
+{
+    if (!gWindow || !gBall) return;
+    CGSize s = gWindow.bounds.size;
+    if (s.width < 1 || s.height < 1) return;
+
+    NSUserDefaults *ud = [NSUserDefaults standardUserDefaults];
+    [ud setDouble:gBall.center.x / s.width forKey:@"adx.ballPosX"];
+    [ud setDouble:gBall.center.y / s.height forKey:@"adx.ballPosY"];
 }
 
 + (void)install
@@ -514,6 +535,9 @@ static UINavigationController *gB50Nav;
     c.y = MAX(side / 2, MIN(c.y + t.y, b.size.height - side / 2));
     gBall.center = c;
     [g setTranslation:CGPointZero inView:nil];
+
+    if (g.state == UIGestureRecognizerStateEnded || g.state == UIGestureRecognizerStateCancelled)
+        [self saveBallPos];
 }
 
 + (void)openPanel
