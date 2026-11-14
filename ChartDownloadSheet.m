@@ -60,6 +60,8 @@ static UIColor *LatencyColor(NSInteger ms)
 @property (nonatomic, assign) BOOL isDx;
 @property (nonatomic, assign) BOOL panelOpen;
 @property (nonatomic, assign) BOOL running;
+@property (nonatomic, assign) BOOL cancelled;
+@property (nonatomic, strong) NSURLSessionDataTask *task;
 @property (nonatomic, assign) NSInteger line;
 @property (nonatomic, copy) NSString *lastPath;          // 上次成功导入的文件夹，导出直接复用它
 @property (nonatomic, copy) NSString *importedPath;      // 已导入 levels 的目录
@@ -119,7 +121,11 @@ static UIColor *LatencyColor(NSInteger ms)
 
 - (void)close
 {
-    if (self.running) return;   // 下载中不关，避免半截文件
+    if (self.running) {          // 下载中要关：先中止再关
+        self.cancelled = YES;
+        [self.task cancel];
+        self.running = NO;
+    }
 
     [self cleanupTemp];
 
@@ -547,6 +553,12 @@ static UIColor *LatencyColor(NSInteger ms)
 /// 蓝色按钮：正常是「开始下载」；导出完还没导入时，这里是「导入游戏」
 - (void)startTapped
 {
+    // 下载中这颗按钮就是「取消下载」
+    if (self.running) {
+        [self cancelTapped];
+        return;
+    }
+
     NSFileManager *fm = [NSFileManager defaultManager];
     if (self.tmpFolder.length && ![self importedAlready] && [fm fileExistsAtPath:self.tmpFolder]) {
         [self importTapped];
@@ -554,6 +566,20 @@ static UIColor *LatencyColor(NSInteger ms)
     }
     if ([self importedAlready]) return;
     [self beginFlow:NO];
+}
+
+/// 中止本次下载：掐断正在传输的任务，删掉半截临时文件，按钮恢复「开始下载」
+- (void)cancelTapped
+{
+    self.cancelled = YES;
+    [self.task cancel];
+    self.task = nil;
+
+    [[NSFileManager defaultManager] removeItemAtPath:self.tmpRoot error:nil];
+    self.tmpRoot = nil;
+    self.tmpFolder = nil;
+
+    [self finishWithText:@"已取消下载"];
 }
 
 - (BOOL)importedAlready
@@ -665,10 +691,15 @@ static UIColor *LatencyColor(NSInteger ms)
 {
     if (self.running) return;
     self.running = YES;
+    self.cancelled = NO;
 
     [self cleanupTemp];                 // 上一轮残留先清掉
 
-    self.startButton.enabled = NO;
+    // 主按钮变成「取消下载」，保持可点（这正是慢线路卡住时的出口）
+    self.startButton.enabled = YES;
+    [self.startButton setTitle:@"取消下载" forState:UIControlStateNormal];
+    self.startButton.backgroundColor = [UIColor systemRedColor];
+
     self.goButton.enabled = NO;
     self.optButton.enabled = NO;
     self.exportButton.enabled = NO;
@@ -749,11 +780,13 @@ static UIColor *LatencyColor(NSInteger ms)
     CGFloat total = (CGFloat)names.count;
 
     for (NSUInteger i = 0; i < names.count; i++) {
+        if (self.cancelled) return;
         NSString *name = names[i];
         NSString *dest = [tmpDir stringByAppendingPathComponent:name];
         BOOL ok = NO;
 
         for (NSUInteger k = 0; k < lines.count && !ok; k++) {
+            if (self.cancelled) return;
             NSUInteger li = ((NSUInteger)self.line + k) % lines.count;
             NSString *u = [NSString stringWithFormat:@"https://%@/%d/%d/%@", lines[li][1], vid, shortId, name];
 
@@ -764,10 +797,14 @@ static UIColor *LatencyColor(NSInteger ms)
             ok = [self fetch:u to:dest];
         }
 
+        if (self.cancelled) return;
+
         if (!ok && [name isEqualToString:@"maidata.txt"]) {
             NSString *fallback = [NSString stringWithFormat:@"https://adxdls.saop.cc/adxcs/%d/maidata.txt", shortId];
             ok = [self fetch:fallback to:dest];
         }
+
+        if (self.cancelled) return;
 
         if (!ok) {
             [[NSFileManager defaultManager] removeItemAtPath:tmpRoot error:nil];
@@ -778,6 +815,8 @@ static UIColor *LatencyColor(NSInteger ms)
         [self setStatus:[NSString stringWithFormat:@"已完成 %lu/%lu", (unsigned long)(i + 1), (unsigned long)names.count]
                progress:(CGFloat)(i + 1) / total];
     }
+
+    if (self.cancelled) return;
 
     if (exporting) {
         // 打包成 zip 放到 Documents/exports，然后弹分享。
@@ -872,9 +911,11 @@ static UIColor *LatencyColor(NSInteger ms)
             }
             dispatch_semaphore_signal(sem);
         }];
+    self.task = t;
     [t resume];
     dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, 40 * NSEC_PER_SEC));
-    return ok;
+    if (self.task == t) self.task = nil;
+    return ok && !self.cancelled;
 }
 
 @end
