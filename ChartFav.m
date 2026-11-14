@@ -5,11 +5,6 @@
 
 static NSString *const kFavKey = @"adx.favs";
 
-static UIColor *FRGB(CGFloat r, CGFloat g, CGFloat b)
-{
-    return [UIColor colorWithRed:r / 255.0 green:g / 255.0 blue:b / 255.0 alpha:1.0];
-}
-
 static NSString *FavCoverDir(void)
 {
     return [NSHomeDirectory() stringByAppendingPathComponent:@"Documents/covers"];
