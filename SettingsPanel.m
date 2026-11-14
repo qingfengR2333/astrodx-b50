@@ -79,13 +79,13 @@ static UIColor *ColorFromHex(NSString *hex)
 + (BOOL)showScoresButton
 {
     id v = [[self d] objectForKey:kShowScoresKey];
-    return v ? [[self d] boolForKey:kShowScoresKey] : YES;
+    return v ? [[self d] boolForKey:kShowScoresKey] : NO;     // 默认关闭
 }
 
 + (BOOL)showB50Button
 {
     id v = [[self d] objectForKey:kShowB50Key];
-    return v ? [[self d] boolForKey:kShowB50Key] : YES;
+    return v ? [[self d] boolForKey:kShowB50Key] : NO;        // 默认关闭
 }
 
 + (BOOL)showImageButton
@@ -98,7 +98,7 @@ static UIColor *ColorFromHex(NSString *hex)
 
 #pragma mark - 面板
 
-@interface ADXSettingsPanel () <UITextFieldDelegate>
+@interface ADXSettingsPanel () <UITextFieldDelegate, UIScrollViewDelegate>
 @property (nonatomic, strong) UISlider *alphaSlider;
 @property (nonatomic, strong) UISlider *textAlphaSlider;
 @property (nonatomic, strong) UITextField *textAlphaField;
@@ -108,6 +108,20 @@ static UIColor *ColorFromHex(NSString *hex)
 @property (nonatomic, strong) UITextField *textField;
 @property (nonatomic, strong) UISegmentedControl *triggerSeg;
 @property (nonatomic, strong) NSMutableArray<UIButton *> *swatches;
+
+// 折叠状态
+@property (nonatomic, strong) NSMutableArray *ballViews;
+@property (nonatomic, strong) NSMutableArray *funcViews;
+@property (nonatomic, strong) NSMutableArray *colorViews;
+@property (nonatomic, strong) UIView *ballHeader;
+@property (nonatomic, strong) UIView *funcHeader;
+@property (nonatomic, strong) UIImageView *ballChevron;
+@property (nonatomic, strong) UIImageView *funcChevron;
+@property (nonatomic, strong) UIButton *colorButton;
+@property (nonatomic, strong) UILabel *sticky;
+@property (nonatomic, assign) BOOL ballOpen;
+@property (nonatomic, assign) BOOL funcOpen;
+@property (nonatomic, assign) BOOL colorOpen;
 
 - (UIStackView *)sliderRowForAlpha:(BOOL)isAlpha unit:(NSString *)unit;
 - (UIStackView *)sliderRowForTextAlpha:(NSString *)unit;
@@ -119,6 +133,8 @@ static UIColor *ColorFromHex(NSString *hex)
 - (void)applyAlpha:(CGFloat)pct;
 - (void)applySize:(CGFloat)v;
 - (void)refreshSwatches;
+- (UIView *)sectionHeader:(NSString *)title ball:(BOOL)ball;
+- (void)applyCollapse;
 @end
 
 @implementation ADXSettingsPanel
@@ -132,6 +148,7 @@ static UIColor *ColorFromHex(NSString *hex)
     UIScrollView *scroll = [[UIScrollView alloc] init];
     scroll.translatesAutoresizingMaskIntoConstraints = NO;
     scroll.alwaysBounceVertical = YES;
+    scroll.delegate = self;
     [self.view addSubview:scroll];
 
     UIStackView *stack = [[UIStackView alloc] init];
@@ -152,7 +169,26 @@ static UIColor *ColorFromHex(NSString *hex)
         [stack.widthAnchor constraintEqualToAnchor:scroll.widthAnchor constant:-32]
     ]];
 
-    [stack addArrangedSubview:[self bigTitle:@"悬浮球"]];
+    // 滚动时的板块指示条
+    self.sticky = [[UILabel alloc] init];
+    self.sticky.translatesAutoresizingMaskIntoConstraints = NO;
+    self.sticky.font = [UIFont boldSystemFontOfSize:13];
+    self.sticky.textColor = [UIColor secondaryLabelColor];
+    self.sticky.backgroundColor = [UIColor systemBackgroundColor];
+    self.sticky.alpha = 0;
+    self.sticky.userInteractionEnabled = NO;
+    [self.view addSubview:self.sticky];
+    [NSLayoutConstraint activateConstraints:@[
+        [self.sticky.topAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.topAnchor],
+        [self.sticky.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor constant:18],
+        [self.sticky.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor constant:-18],
+        [self.sticky.heightAnchor constraintEqualToConstant:22]
+    ]];
+
+    self.ballHeader = [self sectionHeader:@"悬浮球" ball:YES];
+    [stack addArrangedSubview:self.ballHeader];
+    [stack addArrangedSubview:[self spacer:8]];
+    NSUInteger ballStart = stack.arrangedSubviews.count;
 
     // 1. 触发方式
     [stack addArrangedSubview:[self sectionTitle:@"触发方式"]];
@@ -164,8 +200,15 @@ static UIColor *ColorFromHex(NSString *hex)
 
     [stack addArrangedSubview:[self spacer:10]];
 
-    // 2. 颜色
-    [stack addArrangedSubview:[self sectionTitle:@"颜色"]];
+    // 2. 颜色（默认折叠，防误触）
+    self.colorButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    self.colorButton.contentHorizontalAlignment = UIControlContentHorizontalAlignmentLeft;
+    self.colorButton.titleLabel.font = [UIFont boldSystemFontOfSize:15];
+    [self.colorButton setTitleColor:[UIColor labelColor] forState:UIControlStateNormal];
+    [self.colorButton.heightAnchor constraintEqualToConstant:30].active = YES;
+    [self.colorButton addTarget:self action:@selector(toggleColor) forControlEvents:UIControlEventTouchUpInside];
+    [stack addArrangedSubview:self.colorButton];
+    NSUInteger colorStart = stack.arrangedSubviews.count;
     self.swatches = [NSMutableArray array];
     NSArray *palette = @[
         @"#4385F7", @"#4FC3F7", @"#26C6DA", @"#26A69A", @"#66BB6A",
@@ -192,6 +235,10 @@ static UIColor *ColorFromHex(NSString *hex)
         [row addArrangedSubview:b];
     }
     [self refreshSwatches];
+
+    NSUInteger colorEnd = stack.arrangedSubviews.count;
+    self.colorViews = [[stack.arrangedSubviews
+                        subarrayWithRange:NSMakeRange(colorStart, colorEnd - colorStart)] mutableCopy];
 
     [stack addArrangedSubview:[self spacer:10]];
 
@@ -245,8 +292,19 @@ static UIColor *ColorFromHex(NSString *hex)
     self.sizeField.text = [NSString stringWithFormat:@"%d", (int)lround([ADXSettings size])];
     [stack addArrangedSubview:[self hint:@"范围 40～96 pt"]];
 
+    // 悬浮球板块内容（颜色卡单独一组，不重复计入）
+    NSUInteger ballEnd = stack.arrangedSubviews.count;
+    NSMutableArray *ballAll = [[stack.arrangedSubviews
+                                subarrayWithRange:NSMakeRange(ballStart, ballEnd - ballStart)] mutableCopy];
+    [ballAll removeObjectsInArray:self.colorViews];
+    self.ballViews = ballAll;
+
     [stack addArrangedSubview:[self spacer:18]];
-    [stack addArrangedSubview:[self bigTitle:@"功能"]];
+
+    self.funcHeader = [self sectionHeader:@"功能" ball:NO];
+    [stack addArrangedSubview:self.funcHeader];
+    [stack addArrangedSubview:[self spacer:8]];
+    NSUInteger funcStart = stack.arrangedSubviews.count;
     [stack addArrangedSubview:[self switchRow:@"首页显示「导出分表」按钮"
                                           on:[ADXSettings showScoresButton]
                                       action:@selector(toggleScores:)]];
@@ -256,6 +314,16 @@ static UIColor *ColorFromHex(NSString *hex)
     [stack addArrangedSubview:[self switchRow:@"首页显示「导出 b50 成绩图」按钮"
                                           on:[ADXSettings showImageButton]
                                       action:@selector(toggleImage:)]];
+
+    NSUInteger funcEnd = stack.arrangedSubviews.count;
+    self.funcViews = [[stack.arrangedSubviews
+                       subarrayWithRange:NSMakeRange(funcStart, funcEnd - funcStart)] mutableCopy];
+
+    // 默认：两个板块展开，颜色卡折叠
+    self.ballOpen = YES;
+    self.funcOpen = YES;
+    self.colorOpen = NO;
+    [self applyCollapse];
 
     UITapGestureRecognizer *tap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(endEditing)];
     tap.cancelsTouchesInView = NO;
@@ -332,6 +400,115 @@ static UIColor *ColorFromHex(NSString *hex)
     l.text = text;
     l.font = [UIFont boldSystemFontOfSize:22];
     return l;
+}
+
+#pragma mark - 板块标题 / 折叠
+
+- (UIView *)sectionHeader:(NSString *)title ball:(BOOL)ball
+{
+    UIView *box = [[UIView alloc] init];
+    box.backgroundColor = [UIColor secondarySystemGroupedBackgroundColor];
+    box.layer.cornerRadius = 12;
+    [box.heightAnchor constraintEqualToConstant:52].active = YES;
+
+    UIView *accent = [[UIView alloc] init];
+    accent.translatesAutoresizingMaskIntoConstraints = NO;
+    accent.backgroundColor = ball ? [UIColor systemBlueColor] : [UIColor systemGreenColor];
+    accent.layer.cornerRadius = 2;
+    [box addSubview:accent];
+
+    UILabel *l = [[UILabel alloc] init];
+    l.translatesAutoresizingMaskIntoConstraints = NO;
+    l.text = title;
+    l.font = [UIFont boldSystemFontOfSize:20];
+    [box addSubview:l];
+
+    UIImageView *chev = [[UIImageView alloc] init];
+    chev.translatesAutoresizingMaskIntoConstraints = NO;
+    chev.contentMode = UIViewContentModeScaleAspectFit;
+    chev.tintColor = [UIColor secondaryLabelColor];
+    chev.image = [UIImage systemImageNamed:@"chevron.down"];
+    [box addSubview:chev];
+
+    [NSLayoutConstraint activateConstraints:@[
+        [accent.leadingAnchor constraintEqualToAnchor:box.leadingAnchor constant:12],
+        [accent.centerYAnchor constraintEqualToAnchor:box.centerYAnchor],
+        [accent.widthAnchor constraintEqualToConstant:4],
+        [accent.heightAnchor constraintEqualToConstant:22],
+
+        [l.leadingAnchor constraintEqualToAnchor:accent.trailingAnchor constant:10],
+        [l.centerYAnchor constraintEqualToAnchor:box.centerYAnchor],
+
+        [chev.trailingAnchor constraintEqualToAnchor:box.trailingAnchor constant:-14],
+        [chev.centerYAnchor constraintEqualToAnchor:box.centerYAnchor],
+        [chev.widthAnchor constraintEqualToConstant:18],
+        [chev.heightAnchor constraintEqualToConstant:18]
+    ]];
+
+    UITapGestureRecognizer *t = [[UITapGestureRecognizer alloc] initWithTarget:self
+                                                                      action:@selector(headerTapped:)];
+    [box addGestureRecognizer:t];
+    box.tag = ball ? 1 : 2;
+
+    if (ball) self.ballChevron = chev;
+    else self.funcChevron = chev;
+
+    return box;
+}
+
+- (void)headerTapped:(UITapGestureRecognizer *)g
+{
+    if (g.view.tag == 1) self.ballOpen = !self.ballOpen;
+    else self.funcOpen = !self.funcOpen;
+    [self applyCollapse];
+}
+
+- (void)toggleColor
+{
+    self.colorOpen = !self.colorOpen;
+    [self applyCollapse];
+}
+
+- (void)applyCollapse
+{
+    BOOL ball = self.ballOpen;
+    BOOL color = ball && self.colorOpen;
+    BOOL func = self.funcOpen;
+
+    [UIView animateWithDuration:0.2 animations:^{
+        for (UIView *v in self.ballViews) v.hidden = !ball;
+        for (UIView *v in self.colorViews) v.hidden = !color;
+        for (UIView *v in self.funcViews) v.hidden = !func;
+
+        [self.ballChevron setImage:[UIImage systemImageNamed:(ball ? @"chevron.down" : @"chevron.right")]];
+        [self.funcChevron setImage:[UIImage systemImageNamed:(func ? @"chevron.down" : @"chevron.right")]];
+        [self.colorButton setTitle:(self.colorOpen ? @"颜色 ▾" : @"颜色 ▸")
+                          forState:UIControlStateNormal];
+
+        [self.view layoutIfNeeded];
+    }];
+}
+
+#pragma mark - 滚动时的板块提示
+
+- (void)scrollViewDidScroll:(UIScrollView *)scroll
+{
+    if (!self.ballHeader || !self.funcHeader) return;
+
+    CGFloat y = scroll.contentOffset.y;
+    CGRect b = [self.ballHeader convertRect:self.ballHeader.bounds toView:scroll];
+    CGRect f = [self.funcHeader convertRect:self.funcHeader.bounds toView:scroll];
+
+    NSString *name = nil;
+    if (CGRectGetMinY(f) <= y) name = @"功能";
+    else if (CGRectGetMinY(b) <= y) name = @"悬浮球";
+
+    if (name) {
+        if (![self.sticky.text isEqualToString:name]) self.sticky.text = name;
+        if (self.sticky.alpha < 1.0) self.sticky.alpha = 1.0;
+    } else {
+        if (self.sticky.alpha > 0.0) self.sticky.alpha = 0.0;
+    }
 }
 
 - (UIStackView *)switchRow:(NSString *)title on:(BOOL)on action:(SEL)action
