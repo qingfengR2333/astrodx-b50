@@ -1,6 +1,7 @@
 // ChartDownloadSheet.m — 谱面下载：adxdls 的线路 + 直链文件，下载完直接落进 levels
 #import "ChartDownloadSheet.h"
 #import "ChartDb.h"
+#import "Zip.h"
 
 static UIColor *DRGB(CGFloat r, CGFloat g, CGFloat b)
 {
@@ -10,11 +11,11 @@ static UIColor *DRGB(CGFloat r, CGFloat g, CGFloat b)
 /// 站点右上角「设置」里的线路，顺序即兜底顺序
 static NSArray *AdxLines(void)
 {
-    return @[@[@"R2", @"astrodx-charts.saop.cc", @"推荐"],
-             @[@"Alice", @"astrodx-charts-alice.saop.cc", @"备用"],
-             @[@"G510", @"astrodx-charts-g510.saop.cc", @"备用"],
-             @[@"WMC", @"astrodx-charts-wmc.saop.cc", @"备用"],
-             @[@"Tsumugi", @"astrodx-charts-tsumugi.saop.cc", @"备用"]];
+    return @[@[@"R2", @"astrodx-charts.saop.cc", @"推荐", @"Cloudflare R2 主线路，默认选择"],
+             @[@"Alice", @"astrodx-charts-alice.saop.cc", @"备用", @"Alice 下载分流"],
+             @[@"G510", @"astrodx-charts-g510.saop.cc", @"备用", @"G510 下载分流"],
+             @[@"WMC", @"astrodx-charts-wmc.saop.cc", @"备用", @"WMC 下载分流"],
+             @[@"Tsumugi", @"astrodx-charts-tsumugi.saop.cc", @"备用", @"Tsumugi 下载分流"]];
 }
 
 /// 日服版本表（adxdls 的 versionid 就是下标）
@@ -30,13 +31,22 @@ static NSArray *AdxJpVersions(void)
              @"maimai DX CiRCLE", @"maimai DX CiRCLE PLUS", @"maimai DX MAGiCAL"];
 }
 
+/// 延迟 → 圆点颜色：绿 正常 / 黄 一般 / 红 不可用
+static UIColor *LatencyColor(NSInteger ms)
+{
+    if (ms < 0) return DRGB(255, 69, 58);        // 探测中或不可用
+    if (ms < 600) return DRGB(52, 199, 89);
+    if (ms < 1500) return DRGB(255, 204, 0);
+    return DRGB(255, 69, 58);
+}
+
 @interface ADXChartDownloadSheet ()
 
 @property (nonatomic, strong) UIView *dim;
 @property (nonatomic, strong) UIView *card;
 
-@property (nonatomic, strong) UIButton *goButton;      // 站内下载 .zip
-@property (nonatomic, strong) UIButton *optButton;     // 下载选项
+@property (nonatomic, strong) UIButton *goButton;
+@property (nonatomic, strong) UIButton *optButton;
 @property (nonatomic, strong) UILabel *sizeLabel;
 @property (nonatomic, strong) UIView *panel;
 @property (nonatomic, strong) UIView *bgaRow;
@@ -44,15 +54,20 @@ static NSArray *AdxJpVersions(void)
 @property (nonatomic, strong) UIProgressView *bar;
 @property (nonatomic, strong) UILabel *statusLabel;
 @property (nonatomic, strong) UIButton *startButton;
+@property (nonatomic, strong) UIButton *exportButton;
 
 @property (nonatomic, strong) NSArray *song;
 @property (nonatomic, assign) BOOL isDx;
 @property (nonatomic, assign) BOOL panelOpen;
 @property (nonatomic, assign) BOOL running;
 @property (nonatomic, assign) NSInteger line;
-@property (nonatomic, strong) NSMutableArray *lineChecks;
+@property (nonatomic, strong) NSMutableArray *dots;      // 每个线路的小圆点
+@property (nonatomic, strong) NSMutableArray *checks;    // 每个线路的 ✓
+@property (nonatomic, strong) NSMutableArray *latency;   // NSNumber，-1 未知 / -2 不可用
+@property (nonatomic, strong) NSMutableArray *latencyLabels;
 
 + (long long)lengthOf:(NSString *)url;
++ (NSInteger)probeLatency:(NSString *)url;
 + (NSString *)uniquePath:(NSString *)path;
 
 @end
@@ -71,7 +86,12 @@ static NSArray *AdxJpVersions(void)
     sheet.song = song;
     sheet.isDx = dx;
     sheet.line = 0;
-    sheet.lineChecks = [NSMutableArray array];
+    sheet.dots = [NSMutableArray array];
+    sheet.checks = [NSMutableArray array];
+    sheet.latencyLabels = [NSMutableArray array];
+    sheet.latency = [NSMutableArray array];
+
+    for (NSUInteger i = 0; i < AdxLines().count; i++) [sheet.latency addObject:@(-1)];
 
     UIView *dim = [[UIView alloc] initWithFrame:sheet.bounds];
     dim.backgroundColor = [UIColor colorWithWhite:0 alpha:0.38];
@@ -89,6 +109,7 @@ static NSArray *AdxJpVersions(void)
     [UIView animateWithDuration:0.18 animations:^{ sheet.alpha = 1; }];
 
     [sheet measureSize];
+    [sheet measureLatency];
 }
 
 - (void)close
@@ -106,7 +127,7 @@ static NSArray *AdxJpVersions(void)
 {
     CGFloat w = MIN(520, self.bounds.size.width - 56);
 
-    UIView *card = [[UIView alloc] initWithFrame:CGRectMake((self.bounds.size.width - w) / 2, 0, w, 300)];
+    UIView *card = [[UIView alloc] initWithFrame:CGRectMake((self.bounds.size.width - w) / 2, 0, w, 380)];
     card.backgroundColor = [UIColor secondarySystemGroupedBackgroundColor];
     card.layer.cornerRadius = 16;
     card.layer.masksToBounds = YES;
@@ -116,12 +137,32 @@ static NSArray *AdxJpVersions(void)
     CGFloat pad = 20;
     CGFloat inner = w - pad * 2;
 
-    UILabel *title = [[UILabel alloc] initWithFrame:CGRectMake(pad, 18, inner, 24)];
-    title.text = @"下载谱面";
+    // 标题
+    UILabel *title = [[UILabel alloc] initWithFrame:CGRectMake(pad, 12, inner - 140, 32)];
+    title.text = @"谱面下载";
     title.font = [UIFont systemFontOfSize:17 weight:UIFontWeightBold];
     [card addSubview:title];
 
-    UILabel *sub = [[UILabel alloc] initWithFrame:CGRectMake(pad, 44, inner, 18)];
+    // 右上角：关闭 + 导出
+    self.exportButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    self.exportButton.frame = CGRectMake(w - pad - 44, 12, 44, 32);
+    [self.exportButton setTitle:@"导出" forState:UIControlStateNormal];
+    self.exportButton.titleLabel.font = [UIFont systemFontOfSize:15];
+    [self.exportButton addTarget:self action:@selector(exportTapped) forControlEvents:UIControlEventTouchUpInside];
+    [card addSubview:self.exportButton];
+
+    UIButton *closeBtn = [UIButton buttonWithType:UIButtonTypeSystem];
+    closeBtn.frame = CGRectMake(w - pad - 44 - 52, 12, 48, 32);
+    [closeBtn setTitle:@"关闭" forState:UIControlStateNormal];
+    closeBtn.titleLabel.font = [UIFont systemFontOfSize:15];
+    [closeBtn addTarget:self action:@selector(close) forControlEvents:UIControlEventTouchUpInside];
+    [card addSubview:closeBtn];
+
+    UIView *line = [[UIView alloc] initWithFrame:CGRectMake(0, 52, w, 0.5)];
+    line.backgroundColor = [UIColor separatorColor];
+    [card addSubview:line];
+
+    UILabel *sub = [[UILabel alloc] initWithFrame:CGRectMake(pad, 60, inner, 18)];
     sub.text = [NSString stringWithFormat:@"%@ · %@", self.song[1],
                 [ADXChartDb versionText:self.song dx:self.isDx]];
     sub.font = [UIFont systemFontOfSize:12];
@@ -131,7 +172,7 @@ static NSArray *AdxJpVersions(void)
 
     // 站内下载 .zip
     self.goButton = [UIButton buttonWithType:UIButtonTypeSystem];
-    self.goButton.frame = CGRectMake(pad, 76, 168, 40);
+    self.goButton.frame = CGRectMake(pad, 86, 168, 40);
     [self.goButton setTitle:@"⤓  站内下载 .zip" forState:UIControlStateNormal];
     self.goButton.titleLabel.font = [UIFont systemFontOfSize:14 weight:UIFontWeightSemibold];
     self.goButton.backgroundColor = DRGB(110, 124, 240);
@@ -142,7 +183,7 @@ static NSArray *AdxJpVersions(void)
 
     // 下载选项
     self.optButton = [UIButton buttonWithType:UIButtonTypeSystem];
-    self.optButton.frame = CGRectMake(pad + 178, 76, 118, 40);
+    self.optButton.frame = CGRectMake(pad + 178, 86, 118, 40);
     [self.optButton setTitle:@"下载选项 ⌄" forState:UIControlStateNormal];
     self.optButton.titleLabel.font = [UIFont systemFontOfSize:13 weight:UIFontWeightMedium];
     self.optButton.backgroundColor = [UIColor tertiarySystemFillColor];
@@ -151,7 +192,7 @@ static NSArray *AdxJpVersions(void)
     [self.optButton addTarget:self action:@selector(togglePanel) forControlEvents:UIControlEventTouchUpInside];
     [card addSubview:self.optButton];
 
-    self.sizeLabel = [[UILabel alloc] initWithFrame:CGRectMake(pad + 306, 76, inner - 306, 40)];
+    self.sizeLabel = [[UILabel alloc] initWithFrame:CGRectMake(pad + 306, 86, inner - 306, 40)];
     self.sizeLabel.text = @"正在计算…";
     self.sizeLabel.font = [UIFont systemFontOfSize:12];
     self.sizeLabel.textColor = [UIColor secondaryLabelColor];
@@ -159,21 +200,21 @@ static NSArray *AdxJpVersions(void)
 
     [self buildPanelIn:card width:inner x:pad];
 
-    // 包含 BGA
-    UIView *bga = [[UIView alloc] initWithFrame:CGRectMake(pad, 0, inner, 40)];
+    // 包含 BGA（默认关）
+    UIView *bga = [[UIView alloc] initWithFrame:CGRectMake(pad, 0, inner, 46)];
     UILabel *bgaTitle = [[UILabel alloc] initWithFrame:CGRectMake(0, 2, inner - 60, 18)];
     bgaTitle.text = @"包含 BGA 视频";
     bgaTitle.font = [UIFont systemFontOfSize:13 weight:UIFontWeightMedium];
     [bga addSubview:bgaTitle];
 
-    UILabel *bgaNote = [[UILabel alloc] initWithFrame:CGRectMake(0, 20, inner - 60, 16)];
+    UILabel *bgaNote = [[UILabel alloc] initWithFrame:CGRectMake(0, 22, inner - 60, 16)];
     bgaNote.text = @"只影响背景动画，不影响谱面游玩。";
     bgaNote.font = [UIFont systemFontOfSize:11.5];
     bgaNote.textColor = [UIColor tertiaryLabelColor];
     [bga addSubview:bgaNote];
 
-    self.bgaSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(inner - 51, 6, 51, 31)];
-    self.bgaSwitch.on = YES;
+    self.bgaSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(inner - 51, 8, 51, 31)];
+    self.bgaSwitch.on = NO;
     self.bgaSwitch.transform = CGAffineTransformMakeScale(0.82, 0.82);
     [bga addSubview:self.bgaSwitch];
 
@@ -185,7 +226,7 @@ static NSArray *AdxJpVersions(void)
     self.bar.hidden = YES;
     [card addSubview:self.bar];
 
-    self.statusLabel = [[UILabel alloc] initWithFrame:CGRectMake(pad, 0, inner, 18)];
+    self.statusLabel = [[UILabel alloc] initWithFrame:CGRectMake(pad, 0, inner, 20)];
     self.statusLabel.font = [UIFont systemFontOfSize:12];
     self.statusLabel.textColor = [UIColor secondaryLabelColor];
     self.statusLabel.numberOfLines = 2;
@@ -211,29 +252,43 @@ static NSArray *AdxJpVersions(void)
     [card addSubview:panel];
     self.panel = panel;
 
+    UILabel *head = [[UILabel alloc] initWithFrame:CGRectMake(0, 0, inner, 20)];
+    head.text = @"下载线路";
+    head.font = [UIFont systemFontOfSize:11.5];
+    head.textColor = [UIColor tertiaryLabelColor];
+    [panel addSubview:head];
+
     NSArray *lines = AdxLines();
-    CGFloat y = 6;
+    CGFloat rowH = 54;
+    CGFloat y = 22;
+
     for (NSUInteger i = 0; i < lines.count; i++) {
         NSArray *l = lines[i];
-        UIButton *row = [UIButton buttonWithType:UIButtonTypeCustom];
-        row.frame = CGRectMake(0, y, inner, 34);
-        row.tag = (NSInteger)i;
-        [row addTarget:self action:@selector(lineTapped:) forControlEvents:UIControlEventTouchUpInside];
 
-        UILabel *dot = [[UILabel alloc] initWithFrame:CGRectMake(0, 11, 8, 8)];
-        dot.backgroundColor = DRGB(232, 152, 40);
+        UIView *row = [[UIView alloc] initWithFrame:CGRectMake(0, y, inner, rowH)];
+        row.backgroundColor = [UIColor clearColor];
+
+        UIButton *tap = [UIButton buttonWithType:UIButtonTypeCustom];
+        tap.frame = row.bounds;
+        tap.tag = (NSInteger)i;
+        [tap addTarget:self action:@selector(lineTapped:) forControlEvents:UIControlEventTouchUpInside];
+        [row addSubview:tap];
+
+        UILabel *dot = [[UILabel alloc] initWithFrame:CGRectMake(2, 17, 8, 8)];
+        dot.backgroundColor = LatencyColor(-1);
         dot.layer.cornerRadius = 4;
         dot.layer.masksToBounds = YES;
-        dot.tag = 700;
         [row addSubview:dot];
+        [self.dots addObject:dot];
 
-        UILabel *name = [[UILabel alloc] initWithFrame:CGRectMake(16, 4, 120, 18)];
+        UIFont *nf = [UIFont systemFontOfSize:13 weight:UIFontWeightSemibold];
+        UILabel *name = [[UILabel alloc] initWithFrame:CGRectMake(18, 6, 120, 18)];
         name.text = l[0];
-        name.font = [UIFont systemFontOfSize:13 weight:UIFontWeightSemibold];
-        name.tag = 701;
+        name.font = nf;
         [row addSubview:name];
 
-        UILabel *tag = [[UILabel alloc] initWithFrame:CGRectMake(16 + 66, 6, 44, 16)];
+        CGFloat nameW = [l[0] sizeWithAttributes:@{NSFontAttributeName: nf}].width;
+        UILabel *tag = [[UILabel alloc] initWithFrame:CGRectMake(18 + ceil(nameW) + 6, 8, 44, 15)];
         tag.text = l[2];
         tag.font = [UIFont systemFontOfSize:10];
         tag.textColor = [UIColor secondaryLabelColor];
@@ -243,28 +298,44 @@ static NSArray *AdxJpVersions(void)
         tag.layer.masksToBounds = YES;
         [row addSubview:tag];
 
-        UILabel *check = [[UILabel alloc] initWithFrame:CGRectMake(inner - 24, 4, 24, 18)];
+        UILabel *lat = [[UILabel alloc] initWithFrame:CGRectMake(inner - 96, 6, 74, 18)];
+        lat.text = @"…";
+        lat.font = [UIFont systemFontOfSize:12];
+        lat.textColor = [UIColor secondaryLabelColor];
+        lat.textAlignment = NSTextAlignmentRight;
+        [row addSubview:lat];
+        [self.latencyLabels addObject:lat];
+
+        UILabel *check = [[UILabel alloc] initWithFrame:CGRectMake(inner - 22, 6, 20, 18)];
         check.text = @"✓";
         check.font = [UIFont systemFontOfSize:14 weight:UIFontWeightBold];
         check.textColor = [UIColor systemBlueColor];
         check.textAlignment = NSTextAlignmentRight;
-        check.tag = 702;
         check.hidden = (i != 0);
         [row addSubview:check];
+        [self.checks addObject:check];
+
+        UILabel *note = [[UILabel alloc] initWithFrame:CGRectMake(18, 28, inner - 18, 16)];
+        note.text = l[3];
+        note.font = [UIFont systemFontOfSize:11.5];
+        note.textColor = [UIColor tertiaryLabelColor];
+        [row addSubview:note];
+
+        UIView *sep = [[UIView alloc] initWithFrame:CGRectMake(0, rowH - 0.5, inner, 0.5)];
+        sep.backgroundColor = [UIColor separatorColor];
+        [row addSubview:sep];
 
         [panel addSubview:row];
-        [self.lineChecks addObject:check];
-        y += 34;
+        y += rowH;
     }
 
-    UILabel *note = [[UILabel alloc] initWithFrame:CGRectMake(0, y + 2, inner, 16)];
-    note.text = @"R2 为主线路；下载失败会自动换到下一条。";
-    note.font = [UIFont systemFontOfSize:11];
-    note.textColor = [UIColor tertiaryLabelColor];
-    [panel addSubview:note];
+    UILabel *tail = [[UILabel alloc] initWithFrame:CGRectMake(0, y + 4, inner, 16)];
+    tail.text = @"绿点延迟正常，黄点一般，红点不可用；下载失败会自动换线。";
+    tail.font = [UIFont systemFontOfSize:11];
+    tail.textColor = [UIColor tertiaryLabelColor];
+    [panel addSubview:tail];
 
-    panel.frame = CGRectMake(pad, 124, inner, 0);
-    panel.tag = 999;
+    panel.frame = CGRectMake(pad, 136, inner, 0);
 }
 
 - (void)layoutCard
@@ -273,23 +344,18 @@ static NSArray *AdxJpVersions(void)
     CGFloat pad = 20;
     CGFloat inner = w - pad * 2;
 
-    CGFloat panelH = self.panelOpen ? (6 + 34 * AdxLines().count + 20) : 0;
-    self.panel.frame = CGRectMake(pad, 124, inner, panelH);
+    CGFloat rows = AdxLines().count * 54;
+    CGFloat panelH = self.panelOpen ? (22 + rows + 24) : 0;
+    self.panel.frame = CGRectMake(pad, 136, inner, panelH);
 
-    // 说明文字贴在 panel 底部（panel 里唯一的直接 UILabel）
-    for (UIView *v in self.panel.subviews) {
-        if ([v isKindOfClass:[UILabel class]])
-            v.frame = CGRectMake(0, 34 * AdxLines().count + 2, inner, 16);
-    }
-
-    CGFloat y = 124 + panelH + 4;
-    self.bgaRow.frame = CGRectMake(pad, y, inner, 40);
-    y += 40;
+    CGFloat y = 136 + panelH + 2;
+    self.bgaRow.frame = CGRectMake(pad, y, inner, 46);
+    y += 46;
 
     if (!self.bar.hidden) {
         self.bar.frame = CGRectMake(pad, y + 4, inner, 4);
-        self.statusLabel.frame = CGRectMake(pad, y + 12, inner, 20);
-        y += 38;
+        self.statusLabel.frame = CGRectMake(pad, y + 10, inner, 20);
+        y += 36;
     }
 
     if (!self.startButton.hidden) {
@@ -300,7 +366,7 @@ static NSArray *AdxJpVersions(void)
 
     CGRect f = self.card.frame;
     f.size.height = y;
-    f.origin.y = round((self.bounds.size.height - y) / 2);
+    f.origin.y = MAX(24, round((self.bounds.size.height - y) / 2));
     self.card.frame = f;
 }
 
@@ -318,13 +384,13 @@ static NSArray *AdxJpVersions(void)
 - (void)lineTapped:(UIButton *)b
 {
     self.line = b.tag;
-    for (NSUInteger i = 0; i < self.lineChecks.count; i++) {
-        UILabel *c = self.lineChecks[i];
+    for (NSUInteger i = 0; i < self.checks.count; i++) {
+        UILabel *c = self.checks[i];
         c.hidden = (i != (NSUInteger)self.line);
     }
 }
 
-#pragma mark - 计算大小
+#pragma mark - 探测：大小 + 延迟
 
 - (int)shortId
 {
@@ -337,14 +403,11 @@ static NSArray *AdxJpVersions(void)
 {
     NSString *jp = [ADXChartDb jpVersionName:self.song dx:self.isDx];
     NSUInteger idx = [AdxJpVersions() indexOfObject:jp];
-    if (idx == NSNotFound) {
-        // 没有日服版本信息时，按国服版本名粗估一个，保证路径不至于全错
-        return 27;
-    }
+    if (idx == NSNotFound) return 27;
     return (int)idx;
 }
 
-- (NSString *)fileURL:(NSString *)name host:(NSString *)host
+- (NSString *)urlFor:(NSString *)name host:(NSString *)host
 {
     return [NSString stringWithFormat:@"https://%@/%d/%d/%@", host, [self versionId], [self shortId], name];
 }
@@ -352,7 +415,9 @@ static NSArray *AdxJpVersions(void)
 - (void)measureSize
 {
     NSString *host = AdxLines()[0][1];
-    NSArray *probes = @[[self fileURL:@"track.mp3" host:host], [self fileURL:@"bg.png" host:host]];
+    NSArray *probes = @[[self urlFor:@"track.mp3" host:host], [self urlFor:@"bg.png" host:host]];
+    NSString *bgaHost = host;
+    NSString *bgaURL = [self urlFor:@"pv.mp4" host:bgaHost];
 
     __weak __typeof(self) weakSelf = self;
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
@@ -361,16 +426,77 @@ static NSArray *AdxJpVersions(void)
             long long n = [ADXChartDownloadSheet lengthOf:u];
             if (n > 0) total += n;
         }
+        long long pv = [ADXChartDownloadSheet lengthOf:bgaURL];
         dispatch_async(dispatch_get_main_queue(), ^{
             __typeof(weakSelf) me = weakSelf;
             if (!me) return;
             if (total <= 0) {
                 me.sizeLabel.text = @"";
+                return;
+            }
+            if (pv > 0) {
+                me.sizeLabel.text = [NSString stringWithFormat:@"约 %.1f MB", (total + pv) / 1048576.0];
             } else {
                 me.sizeLabel.text = [NSString stringWithFormat:@"约 %.1f MB", total / 1048576.0];
             }
         });
     });
+}
+
+/// 逐条线路测一次延迟（拿 track.mp3 的首字节）
+- (void)measureLatency
+{
+    NSArray *lines = AdxLines();
+    NSMutableArray *urls = [NSMutableArray array];
+    for (NSUInteger i = 0; i < lines.count; i++) {
+        NSString *u = [self urlFor:@"track.mp3" host:lines[i][1]];
+        [urls addObject:(u.length ? u : @"")];
+    }
+
+    __weak __typeof(self) weakSelf = self;
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+        for (NSUInteger i = 0; i < urls.count; i++) {
+            NSString *u = urls[i];
+            NSInteger ms = u.length ? [ADXChartDownloadSheet probeLatency:u] : -1;
+
+            dispatch_async(dispatch_get_main_queue(), ^{
+                __typeof(weakSelf) me = weakSelf;
+                if (!me || i >= me.latency.count) return;
+                me.latency[i] = @(ms < 0 ? -2 : ms);
+
+                UILabel *lat = me.latencyLabels[i];
+                lat.text = (ms < 0) ? @"不可用" : [NSString stringWithFormat:@"%ld ms", (long)ms];
+                lat.textColor = (ms < 0) ? [UIColor tertiaryLabelColor] : [UIColor secondaryLabelColor];
+
+                UILabel *dot = me.dots[i];
+                dot.backgroundColor = (ms < 0) ? DRGB(255, 69, 58) : LatencyColor(ms);
+            });
+        }
+    });
+}
+
++ (NSInteger)probeLatency:(NSString *)url
+{
+    NSMutableURLRequest *req = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:url]];
+    req.timeoutInterval = 6;
+    [req setValue:@"bytes=0-0" forHTTPHeaderField:@"Range"];
+
+    __block NSInteger ms = -1;
+    dispatch_semaphore_t sem = dispatch_semaphore_create(0);
+    CFTimeInterval t0 = CFAbsoluteTimeGetCurrent();
+
+    NSURLSessionDataTask *t = [[NSURLSession sharedSession] dataTaskWithRequest:req
+        completionHandler:^(NSData *data, NSURLResponse *resp, NSError *err) {
+            NSInteger code = 0;
+            if ([resp isKindOfClass:[NSHTTPURLResponse class]]) code = [(NSHTTPURLResponse *)resp statusCode];
+            if (!err && (code == 200 || code == 206)) {
+                ms = (NSInteger)((CFAbsoluteTimeGetCurrent() - t0) * 1000.0);
+            }
+            dispatch_semaphore_signal(sem);
+        }];
+    [t resume];
+    dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, 8 * NSEC_PER_SEC));
+    return ms;
 }
 
 + (long long)lengthOf:(NSString *)url
@@ -404,12 +530,23 @@ static NSArray *AdxJpVersions(void)
 
 - (void)startTapped
 {
+    [self beginWithExport:NO];
+}
+
+- (void)exportTapped
+{
+    [self beginWithExport:YES];
+}
+
+- (void)beginWithExport:(BOOL)exporting
+{
     if (self.running) return;
     self.running = YES;
 
     self.startButton.enabled = NO;
     self.goButton.enabled = NO;
     self.optButton.enabled = NO;
+    self.exportButton.enabled = NO;
     self.bar.hidden = NO;
     self.statusLabel.hidden = NO;
     self.bar.progress = 0;
@@ -418,7 +555,7 @@ static NSArray *AdxJpVersions(void)
 
     __weak __typeof(self) weakSelf = self;
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
-        [weakSelf runDownload];
+        [weakSelf runWithExport:exporting];
     });
 }
 
@@ -431,19 +568,38 @@ static NSArray *AdxJpVersions(void)
     });
 }
 
-- (void)runDownload
+- (void)finishWithText:(NSString *)text
+{
+    dispatch_async(dispatch_get_main_queue(), ^{
+        self.running = NO;
+        self.statusLabel.text = text;
+        self.goButton.enabled = YES;
+        self.optButton.enabled = YES;
+        self.exportButton.enabled = YES;
+        self.startButton.enabled = YES;
+        self.startButton.hidden = YES;
+        [self layoutCard];
+    });
+}
+
+- (NSString *)folderName
+{
+    NSString *title = self.song[1];
+    if (![title isKindOfClass:[NSString class]]) title = @"chart";
+    NSString *name = [NSString stringWithFormat:@"%d %@", [self shortId], title];
+    name = [name stringByReplacingOccurrencesOfString:@"/" withString:@"-"];
+    return name;
+}
+
+- (void)runWithExport:(BOOL)exporting
 {
     int shortId = [self shortId];
     int vid = [self versionId];
-
-    NSString *title = self.song[1];
-    if (![title isKindOfClass:[NSString class]]) title = @"chart";
-    NSString *folderName = [NSString stringWithFormat:@"%d %@", shortId, title];
-    folderName = [folderName stringByReplacingOccurrencesOfString:@"/" withString:@"-"];
+    NSString *folder = [self folderName];
 
     NSString *tmpRoot = [NSTemporaryDirectory() stringByAppendingPathComponent:
                          [NSString stringWithFormat:@"ADXDl-%@", [[NSUUID UUID] UUIDString]]];
-    NSString *tmpDir = [tmpRoot stringByAppendingPathComponent:folderName];
+    NSString *tmpDir = [tmpRoot stringByAppendingPathComponent:folder];
     [[NSFileManager defaultManager] createDirectoryAtPath:tmpDir
                               withIntermediateDirectories:YES attributes:nil error:nil];
 
@@ -458,11 +614,9 @@ static NSArray *AdxJpVersions(void)
         NSString *dest = [tmpDir stringByAppendingPathComponent:name];
         BOOL ok = NO;
 
-        // 先从选中的线路开始，失败依次换线
         for (NSUInteger k = 0; k < lines.count && !ok; k++) {
             NSUInteger li = ((NSUInteger)self.line + k) % lines.count;
-            NSString *host = lines[li][1];
-            NSString *u = [NSString stringWithFormat:@"https://%@/%d/%d/%@", host, vid, shortId, name];
+            NSString *u = [NSString stringWithFormat:@"https://%@/%d/%d/%@", lines[li][1], vid, shortId, name];
 
             [self setStatus:[NSString stringWithFormat:@"正在从 %@ 下载 %@（%lu/%lu）",
                              lines[li][0], name, (unsigned long)(i + 1), (unsigned long)names.count]
@@ -471,7 +625,6 @@ static NSArray *AdxJpVersions(void)
             ok = [self fetch:u to:dest];
         }
 
-        // maidata 只有镜像站有，主站 404 时退回站点自己的 /adxcs
         if (!ok && [name isEqualToString:@"maidata.txt"]) {
             NSString *fallback = [NSString stringWithFormat:@"https://adxdls.saop.cc/adxcs/%d/maidata.txt", shortId];
             ok = [self fetch:fallback to:dest];
@@ -479,14 +632,7 @@ static NSArray *AdxJpVersions(void)
 
         if (!ok) {
             [[NSFileManager defaultManager] removeItemAtPath:tmpRoot error:nil];
-            self.running = NO;
-            dispatch_async(dispatch_get_main_queue(), ^{
-                self.startButton.enabled = YES;
-                self.goButton.enabled = YES;
-                self.optButton.enabled = YES;
-                self.statusLabel.text = [NSString stringWithFormat:@"%@ 下载失败，已试过所有线路", name];
-                [self layoutCard];
-            });
+            [self finishWithText:[NSString stringWithFormat:@"%@ 下载失败，已试过所有线路", name]];
             return;
         }
 
@@ -494,32 +640,57 @@ static NSArray *AdxJpVersions(void)
                progress:(CGFloat)(i + 1) / total];
     }
 
-    // 落到 Documents/levels
+    if (exporting) {
+        // 打包成 zip 放到 Documents/exports，然后弹分享
+        NSString *exports = [NSHomeDirectory() stringByAppendingPathComponent:@"Documents/exports"];
+        [[NSFileManager defaultManager] createDirectoryAtPath:exports
+                                  withIntermediateDirectories:YES attributes:nil error:nil];
+
+        NSString *zipPath = [[exports stringByAppendingPathComponent:folder] stringByAppendingPathExtension:@"zip"];
+        zipPath = [ADXChartDownloadSheet uniquePath:zipPath];
+
+        NSError *zerr = nil;
+        BOOL zipped = [ADXZip zipDirectory:tmpDir to:zipPath error:&zerr];
+        [[NSFileManager defaultManager] removeItemAtPath:tmpRoot error:nil];
+
+        if (!zipped) {
+            [self finishWithText:[NSString stringWithFormat:@"打包失败：%@", zerr.localizedDescription ?: @"未知"]];
+            return;
+        }
+        [self finishWithText:[NSString stringWithFormat:@"已导出 %@", [zipPath lastPathComponent]]];
+        dispatch_async(dispatch_get_main_queue(), ^{ [self shareFile:zipPath]; });
+        return;
+    }
+
     NSString *levels = [NSHomeDirectory() stringByAppendingPathComponent:@"Documents/levels"];
     [[NSFileManager defaultManager] createDirectoryAtPath:levels
                               withIntermediateDirectories:YES attributes:nil error:nil];
 
-    NSString *finalPath = [levels stringByAppendingPathComponent:folderName];
-    finalPath = [ADXChartDownloadSheet uniquePath:finalPath];
+    NSString *finalPath = [ADXChartDownloadSheet uniquePath:[levels stringByAppendingPathComponent:folder]];
 
     NSError *moveErr = nil;
     BOOL moved = [[NSFileManager defaultManager] moveItemAtPath:tmpDir toPath:finalPath error:&moveErr];
     [[NSFileManager defaultManager] removeItemAtPath:tmpRoot error:nil];
 
-    self.running = NO;
-    dispatch_async(dispatch_get_main_queue(), ^{
-        [self.bar setProgress:1.0 animated:YES];
-        if (moved) {
-            self.statusLabel.text = [NSString stringWithFormat:@"已导入 levels/%@", [finalPath lastPathComponent]];
-        } else {
-            self.statusLabel.text = [NSString stringWithFormat:@"导入失败：%@", moveErr.localizedDescription ?: @"未知"];
-        }
-        self.startButton.enabled = YES;
-        self.startButton.hidden = YES;
-        self.goButton.enabled = YES;
-        self.optButton.enabled = YES;
-        [self layoutCard];
-    });
+    if (moved) {
+        [self finishWithText:[NSString stringWithFormat:@"已导入 levels/%@", [finalPath lastPathComponent]]];
+    } else {
+        [self finishWithText:[NSString stringWithFormat:@"导入失败：%@", moveErr.localizedDescription ?: @"未知"]];
+    }
+}
+
+- (void)shareFile:(NSString *)path
+{
+    UIViewController *vc = self.window.rootViewController;
+    while (vc.presentedViewController) vc = vc.presentedViewController;
+    if (!vc) return;
+
+    UIActivityViewController *av = [[UIActivityViewController alloc] initWithActivityItems:@[[NSURL fileURLWithPath:path]]
+                                                                    applicationActivities:nil];
+    av.popoverPresentationController.sourceView = self;
+    av.popoverPresentationController.sourceRect = CGRectMake(CGRectGetMidX(self.bounds),
+                                                             CGRectGetMidY(self.bounds), 1, 1);
+    [vc presentViewController:av animated:YES completion:nil];
 }
 
 + (NSString *)uniquePath:(NSString *)path
@@ -527,10 +698,12 @@ static NSArray *AdxJpVersions(void)
     if (![[NSFileManager defaultManager] fileExistsAtPath:path]) return path;
 
     NSString *dir = [path stringByDeletingLastPathComponent];
-    NSString *base = [path lastPathComponent];
+    NSString *base = [[path lastPathComponent] stringByDeletingPathExtension];
+    NSString *ext = [path pathExtension];
     for (int i = 2; i < 100; i++) {
-        NSString *cand = [dir stringByAppendingPathComponent:
-                          [NSString stringWithFormat:@"%@ (%d)", base, i]];
+        NSString *name = ext.length ? [NSString stringWithFormat:@"%@ (%d).%@", base, i, ext]
+                                    : [NSString stringWithFormat:@"%@ (%d)", base, i];
+        NSString *cand = [dir stringByAppendingPathComponent:name];
         if (![[NSFileManager defaultManager] fileExistsAtPath:cand]) return cand;
     }
     return path;

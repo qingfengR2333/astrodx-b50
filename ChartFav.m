@@ -1,4 +1,4 @@
-// ChartFav.m — 收藏夹存储 + 收藏夹弹窗
+// ChartFav.m — 收藏夹存储 + 收藏夹弹窗（带搜索）
 #import "ChartFav.h"
 #import "ChartDb.h"
 #import "B50Image.h"
@@ -48,13 +48,68 @@ static NSString *FavCoverDir(void)
 
 @end
 
+#pragma mark - 行
+
+@interface ADXFavCell : UITableViewCell
+@property (nonatomic, strong) UIImageView *cover;
+@property (nonatomic, strong) UILabel *name;
+@property (nonatomic, strong) UILabel *sub;
+@end
+
+@implementation ADXFavCell
+
+- (instancetype)initWithStyle:(UITableViewCellStyle)style reuseIdentifier:(NSString *)reuseIdentifier
+{
+    self = [super initWithStyle:style reuseIdentifier:reuseIdentifier];
+    if (self) {
+        self.backgroundColor = [UIColor clearColor];
+        self.selectionStyle = UITableViewCellSelectionStyleDefault;
+
+        _cover = [[UIImageView alloc] initWithFrame:CGRectMake(20, 10, 38, 38)];
+        _cover.contentMode = UIViewContentModeScaleAspectFill;
+        _cover.clipsToBounds = YES;
+        _cover.layer.cornerRadius = 5;
+        _cover.backgroundColor = [UIColor secondarySystemBackgroundColor];
+        [self.contentView addSubview:_cover];
+
+        _name = [[UILabel alloc] initWithFrame:CGRectMake(68, 9, 340, 19)];
+        _name.font = [UIFont systemFontOfSize:14.5 weight:UIFontWeightSemibold];
+        _name.lineBreakMode = NSLineBreakByTruncatingTail;
+        [self.contentView addSubview:_name];
+
+        _sub = [[UILabel alloc] initWithFrame:CGRectMake(68, 28, 340, 17)];
+        _sub.font = [UIFont systemFontOfSize:11.5];
+        _sub.textColor = [UIColor secondaryLabelColor];
+        _sub.lineBreakMode = NSLineBreakByTruncatingTail;
+        [self.contentView addSubview:_sub];
+
+        UIImageView *arrow = [[UIImageView alloc] initWithImage:[UIImage systemImageNamed:@"chevron.right"]];
+        arrow.tintColor = [UIColor tertiaryLabelColor];
+        arrow.frame = CGRectMake(0, 0, 12, 14);
+        self.accessoryView = arrow;
+    }
+    return self;
+}
+
+- (void)layoutSubviews
+{
+    [super layoutSubviews];
+    CGFloat w = self.contentView.bounds.size.width;
+    self.name.frame = CGRectMake(68, 9, w - 68 - 34, 19);
+    self.sub.frame = CGRectMake(68, 28, w - 68 - 34, 17);
+}
+
+@end
+
 #pragma mark - 弹窗
 
-@interface ADXChartFavSheet () <UITableViewDataSource, UITableViewDelegate>
+@interface ADXChartFavSheet () <UITableViewDataSource, UITableViewDelegate, UISearchBarDelegate>
 @property (nonatomic, strong) UIView *dim;
 @property (nonatomic, strong) UIView *card;
-@property (nonatomic, strong) UIView *content;
 @property (nonatomic, strong) UITableView *table;
+@property (nonatomic, strong) UISearchBar *search;
+@property (nonatomic, strong) UILabel *empty;
+@property (nonatomic, copy) NSArray *all;
 @property (nonatomic, copy) NSArray *songs;
 @property (nonatomic, copy) void (^openBlock)(int songId);
 @end
@@ -88,16 +143,16 @@ static NSString *FavCoverDir(void)
 
 - (void)build
 {
-    // 先把收藏 id 解析成曲目
     NSMutableArray *list = [NSMutableArray array];
     for (NSNumber *n in [ADXChartFav ids]) {
         NSArray *s = [ADXChartDb songById:[n intValue]];
         if (s) [list addObject:s];
     }
+    self.all = list;
     self.songs = list;
 
     CGFloat w = MIN(520, self.bounds.size.width - 64);
-    CGFloat h = MIN(560, self.bounds.size.height - 140);
+    CGFloat h = MIN(600, self.bounds.size.height - 120);
 
     UIView *card = [[UIView alloc] initWithFrame:CGRectMake((self.bounds.size.width - w) / 2,
                                                            (self.bounds.size.height - h) / 2, w, h)];
@@ -109,45 +164,52 @@ static NSString *FavCoverDir(void)
     [self addSubview:card];
     self.card = card;
 
-    UIView *content = [[UIView alloc] initWithFrame:CGRectMake(0, 0, w, 52)];
-    [card addSubview:content];
-    self.content = content;
-
-    UILabel *title = [[UILabel alloc] initWithFrame:CGRectMake(20, 0, w - 80, 52)];
+    UILabel *title = [[UILabel alloc] initWithFrame:CGRectMake(20, 0, w - 80, 50)];
     title.text = @"收藏夹";
     title.font = [UIFont systemFontOfSize:17 weight:UIFontWeightBold];
-    [content addSubview:title];
+    [card addSubview:title];
 
     UIButton *close = [UIButton buttonWithType:UIButtonTypeSystem];
-    close.frame = CGRectMake(w - 72, 0, 56, 52);
+    close.frame = CGRectMake(w - 72, 0, 56, 50);
     [close setTitle:@"关闭" forState:UIControlStateNormal];
     close.titleLabel.font = [UIFont systemFontOfSize:15];
     [close addTarget:self action:@selector(close) forControlEvents:UIControlEventTouchUpInside];
-    [content addSubview:close];
+    [card addSubview:close];
 
-    UIView *line = [[UIView alloc] initWithFrame:CGRectMake(0, 52, w, 0.5)];
+    UIView *line = [[UIView alloc] initWithFrame:CGRectMake(0, 49.5, w, 0.5)];
     line.backgroundColor = [UIColor separatorColor];
-    [content addSubview:line];
+    [card addSubview:line];
 
-    CGFloat top = 52;
+    // 搜索框
+    UISearchBar *search = [[UISearchBar alloc] initWithFrame:CGRectMake(12, 52, w - 24, 44)];
+    search.placeholder = @"搜索曲名 / 编号 / 别名";
+    search.searchBarStyle = UISearchBarStyleMinimal;
+    search.delegate = self;
+    search.autocorrectionType = UITextAutocorrectionTypeNo;
+    search.autocapitalizationType = UITextAutocapitalizationTypeNone;
+    [card addSubview:search];
+    self.search = search;
+
+    CGFloat top = 98;
     UITableView *table = [[UITableView alloc] initWithFrame:CGRectMake(0, top, w, h - top)
                                                       style:UITableViewStylePlain];
     table.backgroundColor = [UIColor clearColor];
-    table.separatorInset = UIEdgeInsetsMake(0, 62, 0, 0);
-    table.rowHeight = 60;
+    table.separatorInset = UIEdgeInsetsMake(0, 68, 0, 0);
+    table.rowHeight = 58;
     table.dataSource = self;
     table.delegate = self;
+    table.keyboardDismissMode = UIScrollViewKeyboardDismissModeOnDrag;
     [card addSubview:table];
     self.table = table;
 
-    if (!self.songs.count) {
-        UILabel *none = [[UILabel alloc] initWithFrame:CGRectMake(0, top + 40, w, 24)];
-        none.text = @"还没有收藏的曲目";
-        none.font = [UIFont systemFontOfSize:14];
-        none.textColor = [UIColor tertiaryLabelColor];
-        none.textAlignment = NSTextAlignmentCenter;
-        [card addSubview:none];
-    }
+    UILabel *empty = [[UILabel alloc] initWithFrame:CGRectMake(0, top + 60, w, 24)];
+    empty.text = self.all.count ? @"没有匹配的曲目" : @"还没有收藏的曲目";
+    empty.font = [UIFont systemFontOfSize:14];
+    empty.textColor = [UIColor tertiaryLabelColor];
+    empty.textAlignment = NSTextAlignmentCenter;
+    empty.hidden = self.all.count > 0;
+    [card addSubview:empty];
+    self.empty = empty;
 }
 
 - (void)close
@@ -156,6 +218,31 @@ static NSString *FavCoverDir(void)
     [UIView animateWithDuration:0.15 animations:^{ weakSelf.alpha = 0; } completion:^(BOOL done) {
         [weakSelf removeFromSuperview];
     }];
+}
+
+#pragma mark - 搜索
+
+- (void)searchBar:(UISearchBar *)bar textDidChange:(NSString *)text
+{
+    NSString *q = [text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    if (!q.length) {
+        self.songs = self.all;
+    } else {
+        NSArray *hits = [ADXChartDb search:q limit:300];
+        NSMutableArray *out = [NSMutableArray array];
+        for (NSArray *s in self.all) {
+            if ([hits containsObject:s]) [out addObject:s];
+        }
+        self.songs = out;
+    }
+
+    self.empty.hidden = (self.songs.count > 0);
+    [self.table reloadData];
+}
+
+- (void)searchBarSearchButtonClicked:(UISearchBar *)bar
+{
+    [bar resignFirstResponder];
 }
 
 #pragma mark - 表格
@@ -167,37 +254,25 @@ static NSString *FavCoverDir(void)
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath
 {
-    UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:@"fav"];
-    if (!cell) {
-        cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:@"fav"];
-        cell.backgroundColor = [UIColor clearColor];
-        cell.textLabel.font = [UIFont systemFontOfSize:15 weight:UIFontWeightSemibold];
-        cell.detailTextLabel.font = [UIFont systemFontOfSize:12];
-        cell.detailTextLabel.textColor = [UIColor secondaryLabelColor];
-        cell.imageView.layer.cornerRadius = 6;
-        cell.imageView.layer.masksToBounds = YES;
-        cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
-    }
+    ADXFavCell *cell = [tableView dequeueReusableCellWithIdentifier:@"fav"];
+    if (!cell) cell = [[ADXFavCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:@"fav"];
 
     NSArray *s = self.songs[indexPath.row];
-    cell.textLabel.text = s[1];
-    cell.detailTextLabel.text = [NSString stringWithFormat:@"%@ · %@", s[2], [ADXChartDb numberText:s]];
+    cell.name.text = s[1];
+    cell.sub.text = [NSString stringWithFormat:@"%@ · %@", s[2], [ADXChartDb numberText:s]];
 
     int sid = [s[0] intValue];
     NSString *url = [ADXChartDb coverURL:s];
-    cell.imageView.image = nil;
-    cell.imageView.backgroundColor = [UIColor secondarySystemBackgroundColor];
+    cell.cover.image = nil;
+    cell.cover.tag = sid;
 
-    __weak UITableViewCell *weakCell = cell;
+    __weak ADXFavCell *weakCell = cell;
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
         UIImage *img = url.length ? [ADXImage coverImageFor:sid url:url dir:FavCoverDir()]
                                   : [ADXImage coverImageFor:sid dir:FavCoverDir()];
         if (!img) return;
         dispatch_async(dispatch_get_main_queue(), ^{
-            if (weakCell.textLabel.text.length) {
-                weakCell.imageView.image = img;
-                [weakCell setNeedsLayout];
-            }
+            if (weakCell.cover.tag == sid) weakCell.cover.image = img;
         });
     });
 
@@ -216,7 +291,12 @@ static NSString *FavCoverDir(void)
     [list removeObjectAtIndex:indexPath.row];
     self.songs = list;
 
+    NSMutableArray *all = [NSMutableArray arrayWithArray:self.all];
+    if ([all containsObject:s]) [all removeObject:s];
+    self.all = all;
+
     [tableView deleteRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationFade];
+    self.empty.hidden = (self.songs.count > 0);
 }
 
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath

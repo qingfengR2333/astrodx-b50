@@ -320,4 +320,140 @@ static NSArray *ZipFindInner(NSString *dir)
     return made;
 }
 
+#pragma mark - 打包（store）
+
+static uint32_t gCrcTable[256];
+static BOOL gCrcReady = NO;
+
+static void ZipCrcInit(void)
+{
+    if (gCrcReady) return;
+    for (uint32_t i = 0; i < 256; i++) {
+        uint32_t c = i;
+        for (int k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320u ^ (c >> 1)) : (c >> 1);
+        gCrcTable[i] = c;
+    }
+    gCrcReady = YES;
+}
+
+static uint32_t ZipCrc32(const uint8_t *buf, size_t len)
+{
+    ZipCrcInit();
+    uint32_t c = 0xFFFFFFFFu;
+    for (size_t i = 0; i < len; i++) c = gCrcTable[(c ^ buf[i]) & 0xFF] ^ (c >> 8);
+    return c ^ 0xFFFFFFFFu;
+}
+
+static void ZipPut16(NSMutableData *d, uint16_t v)
+{
+    uint8_t b[2] = { (uint8_t)(v & 0xFF), (uint8_t)(v >> 8) };
+    [d appendBytes:b length:2];
+}
+
+static void ZipPut32(NSMutableData *d, uint32_t v)
+{
+    uint8_t b[4] = { (uint8_t)(v & 0xFF), (uint8_t)((v >> 8) & 0xFF),
+                     (uint8_t)((v >> 16) & 0xFF), (uint8_t)((v >> 24) & 0xFF) };
+    [d appendBytes:b length:4];
+}
+
++ (BOOL)zipDirectory:(NSString *)dir to:(NSString *)zipPath error:(NSError **)error
+{
+    NSFileManager *fm = [NSFileManager defaultManager];
+    BOOL isDir = NO;
+    if (![fm fileExistsAtPath:dir isDirectory:&isDir] || !isDir) {
+        if (error) *error = [NSError errorWithDomain:@"ADXZip" code:30
+                                               userInfo:@{NSLocalizedDescriptionKey: @"要打包的文件夹不存在"}];
+        return NO;
+    }
+
+    NSString *rootName = [dir lastPathComponent];
+    NSMutableArray *relPaths = [NSMutableArray array];
+
+    // 递归收集文件（相对路径，用 / 分隔）
+    NSDirectoryEnumerator *en = [fm enumeratorAtPath:dir];
+    for (NSString *rel in en) {
+        BOOL sub = NO;
+        NSString *full = [dir stringByAppendingPathComponent:rel];
+        if ([fm fileExistsAtPath:full isDirectory:&sub] && sub) continue;
+        if ([rel hasPrefix:@"__MACOSX"]) continue;
+        if ([[rel lastPathComponent] isEqualToString:@".DS_Store"]) continue;
+        [relPaths addObject:rel];
+    }
+    if (relPaths.count == 0) {
+        if (error) *error = [NSError errorWithDomain:@"ADXZip" code:31
+                                               userInfo:@{NSLocalizedDescriptionKey: @"这个文件夹是空的"}];
+        return NO;
+    }
+    [relPaths sortUsingSelector:@selector(compare:)];
+
+    NSMutableData *local = [NSMutableData data];
+    NSMutableData *central = [NSMutableData data];
+    uint32_t offset = 0;
+
+    for (NSString *rel in relPaths) {
+        NSString *full = [dir stringByAppendingPathComponent:rel];
+        NSData *data = [NSData dataWithContentsOfFile:full];
+        if (!data) continue;
+
+        NSString *entry = [NSString stringWithFormat:@"%@/%@", rootName,
+                           [rel stringByReplacingOccurrencesOfString:@"\\" withString:@"/"]];
+        NSData *nameData = [entry dataUsingEncoding:NSUTF8StringEncoding];
+        uint32_t crc = ZipCrc32((const uint8_t *)data.bytes, data.length);
+        uint32_t size = (uint32_t)data.length;
+        uint32_t head = offset;
+
+        // 本地文件头
+        ZipPut32(local, 0x04034b50);
+        ZipPut16(local, 20);          // version needed
+        ZipPut16(local, 0x0800);      // UTF-8 名字
+        ZipPut16(local, 0);           // store
+        ZipPut16(local, 0);           // time
+        ZipPut16(local, 0x21);        // date: 1980-01-01
+        ZipPut32(local, crc);
+        ZipPut32(local, size);
+        ZipPut32(local, size);
+        ZipPut16(local, (uint16_t)nameData.length);
+        ZipPut16(local, 0);
+        [local appendData:nameData];
+        [local appendData:data];
+        offset += (uint32_t)(30 + nameData.length + data.length);
+
+        // 中央目录项
+        ZipPut32(central, 0x02014b50);
+        ZipPut16(central, 20);        // version made by
+        ZipPut16(central, 20);        // version needed
+        ZipPut16(central, 0x0800);
+        ZipPut16(central, 0);
+        ZipPut16(central, 0);
+        ZipPut16(central, 0x21);
+        ZipPut32(central, crc);
+        ZipPut32(central, size);
+        ZipPut32(central, size);
+        ZipPut16(central, (uint16_t)nameData.length);
+        ZipPut16(central, 0);         // extra
+        ZipPut16(central, 0);         // comment
+        ZipPut16(central, 0);         // disk
+        ZipPut16(central, 0);         // internal attr
+        ZipPut32(central, 0);         // external attr
+        ZipPut32(central, head);
+        [central appendData:nameData];
+    }
+
+    NSMutableData *out = [NSMutableData dataWithData:local];
+    uint32_t cdStart = (uint32_t)out.length;
+    [out appendData:central];
+
+    ZipPut32(out, 0x06054b50);
+    ZipPut16(out, 0);
+    ZipPut16(out, 0);
+    ZipPut16(out, (uint16_t)relPaths.count);
+    ZipPut16(out, (uint16_t)relPaths.count);
+    ZipPut32(out, (uint32_t)central.length);
+    ZipPut32(out, cdStart);
+    ZipPut16(out, 0);
+
+    return [out writeToFile:zipPath atomically:YES];
+}
+
 @end

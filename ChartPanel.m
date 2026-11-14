@@ -387,7 +387,7 @@ static UIColor *DiffColor(NSInteger d)
 
     // 右上角收藏星
     UIButton *star = [UIButton buttonWithType:UIButtonTypeSystem];
-    star.frame = CGRectMake(CGRectGetMaxX(card.frame) - 46, y0 + 6, 38, 38);
+    star.frame = CGRectMake(CGRectGetMaxX(card.frame) - 40, y0 + 8, 30, 30);
     star.tintColor = [UIColor tertiaryLabelColor];
     [star addTarget:self action:@selector(toggleFav) forControlEvents:UIControlEventTouchUpInside];
     [self.detail addSubview:star];
@@ -481,7 +481,7 @@ static UIColor *DiffColor(NSInteger d)
 {
     int sid = [self.song[0] intValue];
     BOOL on = [ADXChartFav contains:sid];
-    UIImageSymbolConfiguration *cfg = [UIImageSymbolConfiguration configurationWithPointSize:20
+    UIImageSymbolConfiguration *cfg = [UIImageSymbolConfiguration configurationWithPointSize:16
                                                                                    weight:UIImageSymbolWeightMedium];
     UIImage *img = [UIImage systemImageNamed:(on ? @"star.fill" : @"star") withConfiguration:cfg];
     [self.favButton setImage:img forState:UIControlStateNormal];

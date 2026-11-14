@@ -15,4 +15,8 @@
 /// 返回所有新建的文件夹路径；一个都没建成时返回 nil。
 + (NSArray *)importPack:(NSString *)zipPath into:(NSString *)parentDir error:(NSError **)error;
 
+/// 把一个文件夹打包成 zip（只压不缩，store 方式，够分享用）。
+/// 文件夹本身会成为 zip 的顶层目录，解压出来就是一个同名文件夹。
++ (BOOL)zipDirectory:(NSString *)dir to:(NSString *)zipPath error:(NSError **)error;
+
 @end
