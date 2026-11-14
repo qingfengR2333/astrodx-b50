@@ -209,7 +209,7 @@ static NSString *FavCoverDir(void)
     self.closeButton = close;
 
     UIButton *all = [UIButton buttonWithType:UIButtonTypeSystem];
-    all.frame = CGRectMake(w - 128, 0, 58, 50);
+    all.frame = CGRectMake(w - 190, 0, 58, 50);
     [all setTitle:@"全选" forState:UIControlStateNormal];
     all.titleLabel.font = [UIFont systemFontOfSize:15];
     all.hidden = YES;
@@ -218,7 +218,7 @@ static NSString *FavCoverDir(void)
     self.allButton = all;
 
     UIButton *sel = [UIButton buttonWithType:UIButtonTypeSystem];
-    sel.frame = CGRectMake(w - 190, 0, 58, 50);
+    sel.frame = CGRectMake(w - 128, 0, 58, 50);
     [sel setTitle:@"选择" forState:UIControlStateNormal];
     sel.titleLabel.font = [UIFont systemFontOfSize:15];
     [sel addTarget:self action:@selector(toggleSelecting) forControlEvents:UIControlEventTouchUpInside];
@@ -241,22 +241,28 @@ static NSString *FavCoverDir(void)
     barLine.backgroundColor = [UIColor separatorColor];
     [bar addSubview:barLine];
 
+    CGFloat btnW = (w - 32 - 12) / 2;
     UIButton *refresh = [UIButton buttonWithType:UIButtonTypeSystem];
-    refresh.frame = CGRectMake(0, 6, w / 2, 40);
+    refresh.backgroundColor = [UIColor secondarySystemBackgroundColor];
+    refresh.layer.cornerRadius = 10;
     [refresh setTitle:@"刷新" forState:UIControlStateNormal];
-    refresh.titleLabel.font = [UIFont systemFontOfSize:15];
+    refresh.titleLabel.font = [UIFont systemFontOfSize:15 weight:UIFontWeightMedium];
     [refresh addTarget:self action:@selector(refreshTapped) forControlEvents:UIControlEventTouchUpInside];
     [bar addSubview:refresh];
     self.refreshButton = refresh;
 
     UIButton *del = [UIButton buttonWithType:UIButtonTypeSystem];
-    del.frame = CGRectMake(w / 2, 6, w / 2, 40);
+    del.backgroundColor = [UIColor systemRedColor];
+    del.layer.cornerRadius = 10;
     [del setTitle:@"删除" forState:UIControlStateNormal];
-    del.titleLabel.font = [UIFont systemFontOfSize:15];
-    [del setTitleColor:[UIColor systemRedColor] forState:UIControlStateNormal];
+    del.titleLabel.font = [UIFont systemFontOfSize:15 weight:UIFontWeightMedium];
+    [del setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
     [del addTarget:self action:@selector(deleteTapped) forControlEvents:UIControlEventTouchUpInside];
     [bar addSubview:del];
     self.deleteButton = del;
+
+    refresh.frame = CGRectMake(16, 9, btnW, 42);
+    del.frame = CGRectMake(16 + btnW + 12, 9, btnW, 42);
 
     UITableView *table = [[UITableView alloc] initWithFrame:CGRectMake(0, 50, w, h - 50)
                                                       style:UITableViewStylePlain];
@@ -317,7 +323,7 @@ static NSString *FavCoverDir(void)
 
     CGFloat w = self.card.bounds.size.width;
     CGFloat h = self.card.bounds.size.height;
-    CGFloat barH = on ? 50 : 0;
+    CGFloat barH = on ? 60 : 0;
 
     self.bottomBar.hidden = !on;
     self.bottomBar.frame = CGRectMake(0, h - barH, w, barH);
