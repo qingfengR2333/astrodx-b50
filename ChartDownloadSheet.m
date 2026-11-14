@@ -62,6 +62,10 @@ static UIColor *LatencyColor(NSInteger ms)
 @property (nonatomic, assign) BOOL running;
 @property (nonatomic, assign) NSInteger line;
 @property (nonatomic, copy) NSString *lastPath;          // 上次成功导入的文件夹，导出直接复用它
+@property (nonatomic, copy) NSString *importedPath;      // 已导入 levels 的目录
+@property (nonatomic, copy) NSString *tmpRoot;           // 本次下载的临时根目录（关闭时删除）
+@property (nonatomic, copy) NSString *tmpFolder;         // 临时目录里的谱面文件夹（还没导入）
+@property (nonatomic, copy) NSString *pendingZip;        // 已打好、等待分享/导入的 zip
 @property (nonatomic, strong) NSMutableArray *dots;      // 每个线路的小圆点
 @property (nonatomic, strong) NSMutableArray *checks;    // 每个线路的 ✓
 @property (nonatomic, strong) NSMutableArray *latency;   // NSNumber，-1 未知 / -2 不可用
@@ -116,10 +120,28 @@ static UIColor *LatencyColor(NSInteger ms)
 - (void)close
 {
     if (self.running) return;   // 下载中不关，避免半截文件
+
+    [self cleanupTemp];
+
     __weak __typeof(self) weakSelf = self;
     [UIView animateWithDuration:0.15 animations:^{ weakSelf.alpha = 0; } completion:^(BOOL done) {
         [weakSelf removeFromSuperview];
     }];
+}
+
+/// 关掉面板时清掉本次下载留下的临时文件（已导入 levels 的那份不动）
+- (void)cleanupTemp
+{
+    NSFileManager *fm = [NSFileManager defaultManager];
+    if (self.tmpRoot.length) {
+        [fm removeItemAtPath:self.tmpRoot error:nil];
+        self.tmpRoot = nil;
+    }
+    self.tmpFolder = nil;
+    if (self.pendingZip.length) {
+        [fm removeItemAtPath:self.pendingZip error:nil];
+        self.pendingZip = nil;
+    }
 }
 
 #pragma mark - 界面
@@ -529,29 +551,84 @@ static UIColor *LatencyColor(NSInteger ms)
 
 #pragma mark - 下载
 
+/// 蓝色按钮：正常是「开始下载」；导出完还没导入时，这里是「导入游戏」
 - (void)startTapped
 {
-    [self beginWithExport:NO];
+    NSFileManager *fm = [NSFileManager defaultManager];
+    if (self.tmpFolder.length && ![self importedAlready] && [fm fileExistsAtPath:self.tmpFolder]) {
+        [self importTapped];
+        return;
+    }
+    if ([self importedAlready]) return;
+    [self beginFlow:NO];
+}
+
+- (BOOL)importedAlready
+{
+    NSFileManager *fm = [NSFileManager defaultManager];
+    if (self.importedPath.length && [fm fileExistsAtPath:self.importedPath]) return YES;
+
+    // 重开面板时按惯例路径找一次，避免把同一首再下一遍
+    if (!self.importedPath.length) {
+        NSString *cand = [NSHomeDirectory() stringByAppendingPathComponent:
+                          [NSString stringWithFormat:@"Documents/levels/%@", [self folderName]]];
+        if ([fm fileExistsAtPath:cand]) {
+            self.importedPath = cand;
+            self.lastPath = cand;
+            return YES;
+        }
+    }
+    return NO;
+}
+
+/// 把临时目录里的谱面搬进 levels（导出之后的「导入游戏」）
+- (void)importTapped
+{
+    if (self.running) return;
+    self.running = YES;
+
+    self.startButton.enabled = NO;
+    self.goButton.enabled = NO;
+    self.optButton.enabled = NO;
+    self.exportButton.enabled = NO;
+    [self setStatus:@"正在导入…" progress:1.0];
+
+    __weak __typeof(self) weakSelf = self;
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        NSFileManager *fm = [NSFileManager defaultManager];
+        NSString *levels = [NSHomeDirectory() stringByAppendingPathComponent:@"Documents/levels"];
+        [fm createDirectoryAtPath:levels withIntermediateDirectories:YES attributes:nil error:nil];
+
+        NSString *finalPath = [ADXChartDownloadSheet uniquePath:
+                               [levels stringByAppendingPathComponent:[weakSelf folderName]]];
+        NSError *err = nil;
+        BOOL ok = [fm moveItemAtPath:weakSelf.tmpFolder toPath:finalPath error:&err];
+
+        if (ok) {
+            weakSelf.importedPath = finalPath;
+            weakSelf.lastPath = finalPath;
+            weakSelf.tmpFolder = nil;
+            [weakSelf finishWithText:@"谱面导入成功"];
+        } else {
+            [weakSelf finishWithText:[NSString stringWithFormat:@"导入失败：%@", err.localizedDescription ?: @"未知"]];
+        }
+    });
 }
 
 - (void)exportTapped
 {
-    // 已经下载并导入过，直接打包那份文件，不重复下载
-    NSFileManager *fm = [NSFileManager defaultManager];
-    NSString *src = self.lastPath;
-
-    if (src.length == 0 || ![fm fileExistsAtPath:src]) {
-        // 重开面板时按惯例路径找一次，避免再下一遍
-        NSString *cand = [NSHomeDirectory() stringByAppendingPathComponent:
-                          [NSString stringWithFormat:@"Documents/levels/%@", [self folderName]]];
-        if ([fm fileExistsAtPath:cand]) src = cand;
-    }
-
-    if (src.length && [fm fileExistsAtPath:src]) {
-        [self exportFolder:src];
+    // ① 已经导入过：直接打包 levels 里那份
+    if ([self importedAlready]) {
+        [self exportFolder:self.importedPath];
         return;
     }
-    [self beginWithExport:YES];
+    // ② 导出过一次、zip 还在：直接再分享，不重新下载
+    if (self.pendingZip.length && [[NSFileManager defaultManager] fileExistsAtPath:self.pendingZip]) {
+        [self shareFile:self.pendingZip];
+        return;
+    }
+    // ③ 还什么都没下：走「导出」流程（下载 → 打包 → 分享，不导入）
+    [self beginFlow:YES];
 }
 
 - (void)exportFolder:(NSString *)folder
@@ -591,10 +668,12 @@ static UIColor *LatencyColor(NSInteger ms)
     });
 }
 
-- (void)beginWithExport:(BOOL)exporting
+- (void)beginFlow:(BOOL)exporting
 {
     if (self.running) return;
     self.running = YES;
+
+    [self cleanupTemp];                 // 上一轮残留先清掉
 
     self.startButton.enabled = NO;
     self.goButton.enabled = NO;
@@ -629,8 +708,22 @@ static UIColor *LatencyColor(NSInteger ms)
         self.goButton.enabled = YES;
         self.optButton.enabled = YES;
         self.exportButton.enabled = YES;
-        self.startButton.enabled = YES;
-        self.startButton.hidden = YES;
+
+        // 蓝色按钮三态：已导入 / 导出后待导入 / 初始
+        self.startButton.hidden = NO;
+        if (self.importedPath.length) {
+            self.startButton.enabled = NO;
+            [self.startButton setTitle:@"已导入游戏" forState:UIControlStateNormal];
+            self.startButton.backgroundColor = [UIColor systemGray3Color];
+        } else if (self.tmpFolder.length) {
+            self.startButton.enabled = YES;
+            [self.startButton setTitle:@"导入游戏" forState:UIControlStateNormal];
+            self.startButton.backgroundColor = [UIColor systemBlueColor];
+        } else {
+            self.startButton.enabled = YES;
+            [self.startButton setTitle:@"开始下载" forState:UIControlStateNormal];
+            self.startButton.backgroundColor = [UIColor systemBlueColor];
+        }
         [self layoutCard];
     });
 }
@@ -694,7 +787,8 @@ static UIColor *LatencyColor(NSInteger ms)
     }
 
     if (exporting) {
-        // 打包成 zip 放到 Documents/exports，然后弹分享
+        // 打包成 zip 放到 Documents/exports，然后弹分享。
+        // 注意：不导入 levels，文件留在临时目录，等用户点「导入游戏」再搬。
         NSString *exports = [NSHomeDirectory() stringByAppendingPathComponent:@"Documents/exports"];
         [[NSFileManager defaultManager] createDirectoryAtPath:exports
                                   withIntermediateDirectories:YES attributes:nil error:nil];
@@ -704,13 +798,17 @@ static UIColor *LatencyColor(NSInteger ms)
 
         NSError *zerr = nil;
         BOOL zipped = [ADXZip zipDirectory:tmpDir to:zipPath error:&zerr];
-        [[NSFileManager defaultManager] removeItemAtPath:tmpRoot error:nil];
 
         if (!zipped) {
+            [[NSFileManager defaultManager] removeItemAtPath:tmpRoot error:nil];
             [self finishWithText:[NSString stringWithFormat:@"打包失败：%@", zerr.localizedDescription ?: @"未知"]];
             return;
         }
-        [self finishWithText:[NSString stringWithFormat:@"已导出 %@", [zipPath lastPathComponent]]];
+
+        self.tmpRoot = tmpRoot;
+        self.tmpFolder = tmpDir;
+        self.pendingZip = zipPath;
+        [self finishWithText:@"打包完成，可分享或点「导入游戏」"];
         dispatch_async(dispatch_get_main_queue(), ^{ [self shareFile:zipPath]; });
         return;
     }
@@ -726,8 +824,9 @@ static UIColor *LatencyColor(NSInteger ms)
     [[NSFileManager defaultManager] removeItemAtPath:tmpRoot error:nil];
 
     if (moved) {
+        self.importedPath = finalPath;
         self.lastPath = finalPath;
-        [self finishWithText:[NSString stringWithFormat:@"已导入 levels/%@", [finalPath lastPathComponent]]];
+        [self finishWithText:@"谱面导入成功"];
     } else {
         [self finishWithText:[NSString stringWithFormat:@"导入失败：%@", moveErr.localizedDescription ?: @"未知"]];
     }

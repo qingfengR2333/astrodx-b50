@@ -11,6 +11,9 @@
 /// 切换收藏，返回切换后的状态
 + (BOOL)toggle:(int)songId;
 
+/// 批量取消收藏（多选删除用）
++ (void)remove:(NSArray *)songIds;
+
 @end
 
 @interface ADXChartFavSheet : UIView
