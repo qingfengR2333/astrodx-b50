@@ -166,16 +166,9 @@ static UIColor *LatencyColor(NSInteger ms)
     title.font = [UIFont systemFontOfSize:17 weight:UIFontWeightBold];
     [card addSubview:title];
 
-    // 右上角：谱面导出 + 关闭（关闭在最右）
-    UIButton *closeBtn = [UIButton buttonWithType:UIButtonTypeSystem];
-    closeBtn.frame = CGRectMake(w - pad - 48, 12, 48, 32);
-    [closeBtn setTitle:@"关闭" forState:UIControlStateNormal];
-    closeBtn.titleLabel.font = [UIFont systemFontOfSize:15];
-    [closeBtn addTarget:self action:@selector(close) forControlEvents:UIControlEventTouchUpInside];
-    [card addSubview:closeBtn];
-
+    // 右上角：谱面导出（关闭按钮已去掉，点卡片外即可关闭）
     self.exportButton = [UIButton buttonWithType:UIButtonTypeSystem];
-    self.exportButton.frame = CGRectMake(w - pad - 48 - 84, 12, 80, 32);
+    self.exportButton.frame = CGRectMake(w - pad - 84, 12, 80, 32);
     [self.exportButton setTitle:@"谱面导出" forState:UIControlStateNormal];
     self.exportButton.titleLabel.font = [UIFont systemFontOfSize:15];
     [self.exportButton addTarget:self action:@selector(exportTapped) forControlEvents:UIControlEventTouchUpInside];

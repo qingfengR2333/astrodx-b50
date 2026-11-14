@@ -149,7 +149,6 @@ static NSCache *FavCoverCache(void)
 @property (nonatomic, strong) UILabel *titleLabel;
 @property (nonatomic, strong) UIButton *selectButton;
 @property (nonatomic, strong) UIButton *allButton;
-@property (nonatomic, strong) UIButton *closeButton;
 @property (nonatomic, strong) UIView *bottomBar;
 @property (nonatomic, strong) UIButton *refreshButton;
 @property (nonatomic, strong) UIButton *deleteButton;
@@ -227,17 +226,9 @@ static NSCache *FavCoverCache(void)
     [card addSubview:sort];
     self.sortButton = sort;
 
-    // 右上角：关闭 / 全选 / 选择
-    UIButton *close = [UIButton buttonWithType:UIButtonTypeSystem];
-    close.frame = CGRectMake(w - 66, 0, 50, 50);
-    [close setTitle:@"关闭" forState:UIControlStateNormal];
-    close.titleLabel.font = [UIFont systemFontOfSize:15];
-    [close addTarget:self action:@selector(close) forControlEvents:UIControlEventTouchUpInside];
-    [card addSubview:close];
-    self.closeButton = close;
-
+    // 右上角：全选 / 选择（关闭按钮已去掉，点卡片外即可关闭）
     UIButton *all = [UIButton buttonWithType:UIButtonTypeSystem];
-    all.frame = CGRectMake(w - 190, 0, 58, 50);
+    all.frame = CGRectMake(w - 130, 0, 58, 50);
     [all setTitle:@"全选" forState:UIControlStateNormal];
     all.titleLabel.font = [UIFont systemFontOfSize:15];
     all.hidden = YES;
@@ -246,7 +237,7 @@ static NSCache *FavCoverCache(void)
     self.allButton = all;
 
     UIButton *sel = [UIButton buttonWithType:UIButtonTypeSystem];
-    sel.frame = CGRectMake(w - 128, 0, 58, 50);
+    sel.frame = CGRectMake(w - 70, 0, 58, 50);
     [sel setTitle:@"选择" forState:UIControlStateNormal];
     sel.titleLabel.font = [UIFont systemFontOfSize:15];
     [sel addTarget:self action:@selector(toggleSelecting) forControlEvents:UIControlEventTouchUpInside];
