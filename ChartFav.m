@@ -162,6 +162,10 @@ static NSCache *FavCoverCache(void)
 @property (nonatomic, copy) void (^openBlock)(int songId);
 @property (nonatomic, strong) UIButton *sortButton;
 @property (nonatomic, assign) NSInteger sortMode;      // 0 默认 1 名称 2 版本
+@property (nonatomic, strong) NSMutableSet *dragBase;  // 开始拖动时已有的选中项
+@property (nonatomic, assign) CGPoint dragPoint;       // 手指在 table 内容坐标系里的位置
+@property (nonatomic, assign) CGFloat scrollSpeed;     // 边缘自动滚动速度（pt/帧）
+@property (nonatomic, strong) CADisplayLink *link;
 @end
 
 @implementation ADXChartFavSheet
@@ -218,7 +222,8 @@ static NSCache *FavCoverCache(void)
     sort.frame = CGRectMake(96, 12, 30, 26);
     [sort setImage:[UIImage systemImageNamed:@"line.3.horizontal.decrease"] forState:UIControlStateNormal];
     sort.tintColor = [UIColor secondaryLabelColor];
-    sort.showsMenuAsPrimaryAction = YES;
+    sort.showsMenuAsPrimaryAction = NO;
+    [sort addTarget:self action:@selector(sortTapped) forControlEvents:UIControlEventTouchUpInside];
     [card addSubview:sort];
     self.sortButton = sort;
 
@@ -355,27 +360,33 @@ static NSCache *FavCoverCache(void)
     [self.table reloadData];
 }
 
-- (UIMenu *)sortMenu
+- (void)sortTapped
 {
     NSArray *names = @[@"默认排序", @"按名称排序", @"按版本排序"];
-    NSMutableArray *items = [NSMutableArray arrayWithCapacity:names.count];
     __weak __typeof(self) weakSelf = self;
 
+    UIAlertController *ac = [UIAlertController alertControllerWithTitle:@"排序方式"
+                                                              message:nil
+                                                       preferredStyle:UIAlertControllerStyleActionSheet];
     for (NSInteger i = 0; i < (NSInteger)names.count; i++) {
-        UIAction *a = [UIAction actionWithTitle:names[i] image:nil identifier:nil
-                                        handler:^(UIAction *act) {
+        NSString *t = (i == self.sortMode) ? [names[i] stringByAppendingString:@"  ✓"] : names[i];
+        [ac addAction:[UIAlertAction actionWithTitle:t style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
             __typeof(weakSelf) me = weakSelf;
             if (!me) return;
-            me.sortMode = [names indexOfObject:act.title];
+            me.sortMode = i;
             [UIView performWithoutAnimation:^{
                 [me applySort];
             }];
             [me refreshHeader];
-        }];
-        a.state = (i == self.sortMode) ? UIMenuElementStateOn : UIMenuElementStateOff;
-        [items addObject:a];
+        }]];
     }
-    return [UIMenu menuWithChildren:items];
+    [ac addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
+
+    ac.popoverPresentationController.sourceView = self.sortButton;
+    ac.popoverPresentationController.sourceRect = self.sortButton.bounds;
+    UIViewController *host = self.window.rootViewController;
+    while (host.presentedViewController) host = host.presentedViewController;
+    [host presentViewController:ac animated:YES completion:nil];
 }
 
 - (void)refreshHeader
@@ -390,13 +401,15 @@ static NSCache *FavCoverCache(void)
     CGFloat tw = [self.titleLabel sizeThatFits:CGSizeMake(400, 30)].width;
     self.sortButton.frame = CGRectMake(20 + ceil(tw) + 8, 12, 30, 26);
     self.sortButton.hidden = self.selecting;
-    self.sortButton.menu = [self sortMenu];
 }
 
 - (void)setSelectingMode:(BOOL)on
 {
     self.selecting = on;
-    if (!on) [self.picked removeAllObjects];
+    if (!on) {
+        [self.picked removeAllObjects];
+        [self stopAutoScroll];
+    }
 
     CGFloat w = self.card.bounds.size.width;
     CGFloat h = self.card.bounds.size.height;
@@ -471,28 +484,92 @@ static NSCache *FavCoverCache(void)
         if (!ip) return;
         if (!self.selecting) [self setSelectingMode:YES];
 
-        [self.picked removeAllObjects];
-        [self.picked addObject:self.songs[ip.row][0]];
-        [self refreshChecks];
-        [self refreshHeader];
+        // 记住拖动前已有的选中项，拖动只做并集，不清空别人
+        self.dragBase = [NSMutableSet setWithSet:self.picked];
         self.dragStart = ip.row;
+        self.dragPoint = p;
+        [self updateSelectionAtPoint:p];
+        [self updateAutoScroll];
         return;
     }
 
     if (g.state == UIGestureRecognizerStateChanged) {
         if (!self.selecting) return;
-        NSIndexPath *ip = [self.table indexPathForRowAtPoint:p];
-        if (!ip) return;
-
-        NSInteger a = MIN(self.dragStart, ip.row);
-        NSInteger b = MAX(self.dragStart, ip.row);
-        [self.picked removeAllObjects];
-        for (NSInteger i = a; i <= b && i < (NSInteger)self.songs.count; i++) {
-            if (i >= 0) [self.picked addObject:self.songs[i][0]];
-        }
-        [self refreshChecks];
-        [self refreshHeader];
+        self.dragPoint = p;
+        [self updateSelectionAtPoint:p];
+        [self updateAutoScroll];
+        return;
     }
+
+    [self stopAutoScroll];
+}
+
+- (void)updateSelectionAtPoint:(CGPoint)p
+{
+    NSIndexPath *ip = [self.table indexPathForRowAtPoint:p];
+    if (!ip && self.songs.count) {
+        // 手指滑出表格时，按方向补到首/末行，保证拖动不中断
+        CGFloat h = self.table.contentSize.height;
+        if (p.y < 0) ip = [NSIndexPath indexPathForRow:0 inSection:0];
+        else if (p.y > h) ip = [NSIndexPath indexPathForRow:self.songs.count - 1 inSection:0];
+    }
+    if (!ip || ip.row >= (NSInteger)self.songs.count) return;
+
+    NSInteger a = MIN(self.dragStart, ip.row);
+    NSInteger b = MAX(self.dragStart, ip.row);
+
+    NSMutableSet *set = [NSMutableSet setWithSet:self.dragBase ?: [NSSet set]];
+    for (NSInteger i = a; i <= b; i++) {
+        if (i >= 0 && i < (NSInteger)self.songs.count) [set addObject:self.songs[i][0]];
+    }
+    self.picked = set;
+
+    [self refreshChecks];
+    [self refreshHeader];
+}
+
+// 手指靠近上下边缘就开始自动滚动，越贴边越快（最多 14pt/帧）
+- (void)updateAutoScroll
+{
+    CGFloat h = self.table.bounds.size.height;
+    CGFloat y = self.dragPoint.y - self.table.contentOffset.y;   // 手指在可视区里的相对位置
+    CGFloat edge = 56.0, speed = 0;
+
+    if (y < edge) speed = -(edge - MAX(0.0, y)) / edge;
+    else if (y > h - edge) speed = (MIN(edge, y - (h - edge))) / edge;
+    speed *= 14.0;
+
+    self.scrollSpeed = speed;
+    if (fabs(speed) < 0.4) [self stopAutoScroll];
+    else [self startAutoScroll];
+}
+
+- (void)startAutoScroll
+{
+    if (self.link) return;
+    self.link = [CADisplayLink displayLinkWithTarget:self selector:@selector(tick:)];
+    [self.link addToRunLoop:[NSRunLoop mainRunLoop] forMode:NSRunLoopCommonModes];
+}
+
+- (void)stopAutoScroll
+{
+    [self.link invalidate];
+    self.link = nil;
+    self.scrollSpeed = 0;
+}
+
+- (void)tick:(CADisplayLink *)l
+{
+    CGFloat maxY = MAX(0.0, self.table.contentSize.height - self.table.bounds.size.height);
+    CGFloat y = self.table.contentOffset.y + self.scrollSpeed;
+    y = MAX(0.0, MIN(maxY, y));
+
+    if (fabs(y - self.table.contentOffset.y) < 0.5) {   // 到底了就别再滚
+        [self stopAutoScroll];
+        return;
+    }
+    self.table.contentOffset = CGPointMake(0, y);
+    [self updateSelectionAtPoint:self.dragPoint];
 }
 
 #pragma mark - 表格
@@ -568,6 +645,7 @@ static NSCache *FavCoverCache(void)
 
 - (void)close
 {
+    [self stopAutoScroll];
     __weak __typeof(self) weakSelf = self;
     [UIView animateWithDuration:0.15 animations:^{ weakSelf.alpha = 0; } completion:^(BOOL done) {
         [weakSelf removeFromSuperview];
