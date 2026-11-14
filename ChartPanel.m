@@ -220,7 +220,7 @@ static UIColor *DiffColor(NSInteger d)
 
     NSArray *s = self.hits[indexPath.row];
     cell.textLabel.text = s[1];
-    cell.detailTextLabel.text = [NSString stringWithFormat:@"%@ · No.%d", s[2], [ADXChartDb displayId:s]];
+    cell.detailTextLabel.text = [NSString stringWithFormat:@"%@ · %@", s[2], [ADXChartDb numberText:s]];
     return cell;
 }
 
@@ -282,14 +282,14 @@ static UIColor *DiffColor(NSInteger d)
     cover.layer.masksToBounds = YES;
     cover.tag = [ADXChartDb displayId:song];
     [self.detail addSubview:cover];
-    [self loadCover:[song[0] intValue] into:cover];
+    [self loadCover:[song[0] intValue] song:song into:cover];
 
     // 编号
     CGFloat tx = x + 8 + coverSide + 14;
     CGFloat tw = W - coverSide - 22;
 
     UILabel *no = [[UILabel alloc] initWithFrame:CGRectZero];
-    no.text = [NSString stringWithFormat:@"No.%d", [ADXChartDb displayId:song]];
+    no.text = [ADXChartDb numberText:song];
     no.font = [UIFont systemFontOfSize:12 weight:UIFontWeightSemibold];
     no.textColor = [UIColor secondaryLabelColor];
     no.textAlignment = NSTextAlignmentCenter;
@@ -324,27 +324,32 @@ static UIColor *DiffColor(NSInteger d)
 
     y += MAX(coverSide, 30 + th + 20) + 22;
 
-    // BPM / 分类 / 首次出现版本
+    // BPM / 分类 / 首次出现版本（版本和分类要写国服/日服两段，列宽按 20% / 30% / 50% 分）
     NSArray *titles = @[@"BPM", @"分类", @"首次出现版本"];
     NSArray *values = @[[NSString stringWithFormat:@"%@", song[4]],
-                        [ADXChartDb genreName:song],
-                        [ADXChartDb versionName:song]];
-    CGFloat colW = (W - 32) / 3.0;
+                        [ADXChartDb genreText:song],
+                        [ADXChartDb versionText:song dx:(self.typeIndex == 1)]];
+    CGFloat inner = W - 32;
+    CGFloat frac[3] = {0.16, 0.36, 0.48};
+    CGFloat cx = x + 8;
     for (int i = 0; i < 3; i++) {
-        CGFloat cx = x + 8 + colW * i;
+        CGFloat colW = floor(inner * frac[i]);
         UILabel *cap = [[UILabel alloc] initWithFrame:CGRectMake(cx, y, colW, 16)];
         cap.text = titles[i];
         cap.font = [UIFont systemFontOfSize:11.5];
         cap.textColor = [UIColor tertiaryLabelColor];
         [self.detail addSubview:cap];
 
-        UILabel *val = [[UILabel alloc] initWithFrame:CGRectMake(cx, y + 17, colW - 4, 20)];
+        UILabel *val = [[UILabel alloc] initWithFrame:CGRectMake(cx, y + 17, colW - 6, 20)];
         val.text = values[i];
         val.font = [UIFont systemFontOfSize:14 weight:UIFontWeightSemibold];
         val.adjustsFontSizeToFitWidth = YES;
-        val.minimumScaleFactor = 0.75;
+        val.minimumScaleFactor = 0.6;
+        val.lineBreakMode = NSLineBreakByClipping;
         [self.detail addSubview:val];
         [self copyable:val];
+
+        cx += colW;
     }
     y += 46;
 
@@ -408,11 +413,12 @@ static UIColor *DiffColor(NSInteger d)
 
     // 难度谱面
     NSArray *charts = [ADXChartDb chartsOf:song dx:(self.typeIndex == 1)];
+    NSString *barVersion = [ADXChartDb versionText:song dx:(self.typeIndex == 1)];
     for (NSArray *c in charts) {
         UIView *bar = [self barForChart:c
                                    song:song
                                      dx:(self.typeIndex == 1)
-                                version:[ADXChartDb versionName:song]
+                                version:barVersion
                                   width:W - 32];
         bar.frame = CGRectMake(x + 8, y, W - 32, 64);
         [self.detail addSubview:bar];
@@ -682,15 +688,17 @@ static UIColor *DiffColor(NSInteger d)
     return (cy - y) + h;
 }
 
-- (void)loadCover:(int)songId into:(UIImageView *)iv
+- (void)loadCover:(int)songId song:(NSArray *)song into:(UIImageView *)iv
 {
     NSString *dir = self.coverDir.length ? self.coverDir
                    : [NSHomeDirectory() stringByAppendingPathComponent:@"Documents/covers"];
+    NSString *url = [ADXChartDb coverURL:song];
     NSInteger expect = iv.tag;
     __weak UIImageView *weakIV = iv;
 
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
-        UIImage *img = [ADXImage coverImageFor:songId dir:dir];
+        UIImage *img = url.length ? [ADXImage coverImageFor:songId url:url dir:dir]
+                                  : [ADXImage coverImageFor:songId dir:dir];
         if (!img) return;
         dispatch_async(dispatch_get_main_queue(), ^{
             if (weakIV && weakIV.tag == expect) weakIV.image = img;

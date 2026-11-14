@@ -133,6 +133,44 @@ static void FillRoundGradient(CGRect r, CGFloat radius, UIColor *top, UIColor *b
     return [UIImage imageWithContentsOfFile:path];
 }
 
+/// 日服独有曲目没有官方编号，直接按直链下载（缓存文件名仍用歌曲 id）
++ (UIImage *)coverImageFor:(int)songId url:(NSString *)url dir:(NSString *)dir
+{
+    if (songId <= 0 || !dir.length) return nil;
+
+    NSString *path = [self coverPath:dir songId:songId];
+    UIImage *img = [UIImage imageWithContentsOfFile:path];
+    if (img) return img;
+    if (!url.length) return nil;
+
+    [self downloadURL:url to:path timeout:10];
+    return [UIImage imageWithContentsOfFile:path];
+}
+
++ (BOOL)downloadURL:(NSString *)url to:(NSString *)path timeout:(NSTimeInterval)timeout
+{
+    NSURL *u = [NSURL URLWithString:url];
+    if (!u || !path.length) return NO;
+
+    dispatch_semaphore_t sem = dispatch_semaphore_create(0);
+    __block NSData *data = nil;
+    NSURLSessionDataTask *t =
+        [[NSURLSession sharedSession] dataTaskWithURL:u completionHandler:^(NSData *d, NSURLResponse *r, NSError *e) {
+            data = d;
+            dispatch_semaphore_signal(sem);
+        }];
+    [t resume];
+    dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(timeout * NSEC_PER_SEC)));
+
+    if (data.length < 200) return NO;
+
+    [[NSFileManager defaultManager] createDirectoryAtPath:[path stringByDeletingLastPathComponent]
+                              withIntermediateDirectories:YES
+                                               attributes:nil
+                                                    error:nil];
+    return [data writeToFile:path atomically:YES];
+}
+
 + (BOOL)downloadCover:(int)sid to:(NSString *)dir
 {
     NSFileManager *fm = [NSFileManager defaultManager];

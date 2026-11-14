@@ -1,9 +1,10 @@
-// ChartDb.h — 内置曲库（来自 lxns 舞萌曲库），支持按编号 / 曲名 / 艺术家 / 别名搜索
+// ChartDb.h — 内置曲库（lxns 国服 + adxdls 日服），支持按编号 / 曲名 / 艺术家 / 别名搜索
 #import <Foundation/Foundation.h>
 
 @interface ADXChartDb : NSObject
 
-/// 全部曲目。每首是 NSArray：id、曲名、艺术家、分类下标、BPM、版本码、发布年、别名、标准谱面、DX 谱面
+/// 全部曲目。每首是 NSArray：id、曲名、艺术家、分类下标、BPM、版本码、发布年、别名、标准谱面、DX 谱面、
+/// 日服标准版本下标、日服 DX 版本下标、日服分类下标、曲绘直链
 + (NSArray *)songs;
 
 /// 关键词搜索，最多 limit 条
@@ -22,6 +23,27 @@
 
 /// 「舞萌DX 2024」这种版本名
 + (NSString *)versionName:(NSArray *)song;
+
+#pragma mark - 日服（adxdls）补充
+
+/// 只在日服收录的曲目
++ (BOOL)isJpOnly:(NSArray *)song;
+
+/// 日服首次出现版本，如「maimai DX UNiVERSE PLUS」；没有返回空串
++ (NSString *)jpVersionName:(NSArray *)song dx:(BOOL)dx;
+
+/// 日服分类，如「POPS＆アニメ」；没有返回空串
++ (NSString *)jpGenreName:(NSArray *)song;
+
+/// 日服独有曲目的曲绘直链
++ (NSString *)coverURL:(NSArray *)song;
+
+/// 「国服/日服」双写文本
++ (NSString *)genreText:(NSArray *)song;
++ (NSString *)versionText:(NSArray *)song dx:(BOOL)dx;
+
+/// 「No.11391」或「仅日服」
++ (NSString *)numberText:(NSArray *)song;
 
 /// 某一边的谱面，按难度从高到低：每项是 [难度 0-4, 标准定数, 谱师, 物量]
 + (NSArray *)chartsOf:(NSArray *)song dx:(BOOL)dx;

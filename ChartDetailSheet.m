@@ -120,8 +120,10 @@ static UIColor *SDiffColor(NSInteger d)
 
     NSString *dir = coverDir.length ? coverDir
                    : [NSHomeDirectory() stringByAppendingPathComponent:@"Documents/covers"];
+    NSString *coverURL = [ADXChartDb coverURL:song];
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
-        UIImage *img = [ADXImage coverImageFor:[song[0] intValue] dir:dir];
+        UIImage *img = coverURL.length ? [ADXImage coverImageFor:[song[0] intValue] url:coverURL dir:dir]
+                                       : [ADXImage coverImageFor:[song[0] intValue] dir:dir];
         if (!img) return;
         dispatch_async(dispatch_get_main_queue(), ^{
             cover.image = img;
@@ -143,7 +145,7 @@ static UIColor *SDiffColor(NSInteger d)
     [self.content addSubview:type];
 
     UILabel *no = [[UILabel alloc] initWithFrame:CGRectMake(tx + 38, y + 1, 110, 15)];
-    no.text = [NSString stringWithFormat:@"No.%d", [ADXChartDb displayId:song]];
+    no.text = [ADXChartDb numberText:song];
     no.font = [UIFont systemFontOfSize:10 weight:UIFontWeightSemibold];
     no.textColor = [UIColor secondaryLabelColor];
     [self.content addSubview:no];
