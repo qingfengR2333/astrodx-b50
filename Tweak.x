@@ -465,8 +465,6 @@ static UINavigationController *gB50Nav;
 
     gBall = [[UIView alloc] initWithFrame:CGRectMake(0, 0, side, side)];
     gBall.layer.masksToBounds = YES;
-    gBall.layer.borderWidth = 1.0;
-    gBall.layer.borderColor = [[UIColor colorWithWhite:1.0 alpha:0.22] CGColor];
     gBall.userInteractionEnabled = YES;
 
     gBallLabel = [[UILabel alloc] initWithFrame:gBall.bounds];

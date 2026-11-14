@@ -22,6 +22,11 @@ static NSString *HexFromColor(UIColor *c)
             (int)lround(r * 255), (int)lround(g * 255), (int)lround(b * 255)];
 }
 
+static UIImageSymbolConfiguration *ADXChevronConfig(void)
+{
+    return [UIImageSymbolConfiguration configurationWithPointSize:18 weight:UIFontWeightSemibold];
+}
+
 static UIColor *ColorFromHex(NSString *hex)
 {
     if (hex.length < 7) return [UIColor colorWithRed:0x43/255.0 green:0x85/255.0 blue:0xF7/255.0 alpha:1];
@@ -53,26 +58,26 @@ static UIColor *ColorFromHex(NSString *hex)
 + (CGFloat)alpha
 {
     id v = [[self d] objectForKey:kAlphaKey];
-    return v ? [[self d] doubleForKey:kAlphaKey] : 0.92;
+    return v ? [[self d] doubleForKey:kAlphaKey] : 0.15;
 }
 
 + (NSString *)text
 {
     NSString *t = [[self d] stringForKey:kTextKey];
-    return t.length ? t : @"ADX";
+    return t.length ? t : @"Tools";
 }
 
 + (CGFloat)size
 {
     id v = [[self d] objectForKey:kSizeKey];
-    CGFloat s = v ? [[self d] doubleForKey:kSizeKey] : 56;
+    CGFloat s = v ? [[self d] doubleForKey:kSizeKey] : 50;
     return MIN(96, MAX(40, s));
 }
 
 + (CGFloat)textAlpha
 {
     id v = [[self d] objectForKey:kTextAlphaKey];
-    CGFloat a = v ? [[self d] doubleForKey:kTextAlphaKey] : 1.0;
+    CGFloat a = v ? [[self d] doubleForKey:kTextAlphaKey] : 0.70;
     return MIN(1.0, MAX(0.0, a));
 }
 
@@ -117,7 +122,7 @@ static UIColor *ColorFromHex(NSString *hex)
 @property (nonatomic, strong) UIView *funcHeader;
 @property (nonatomic, strong) UIImageView *ballChevron;
 @property (nonatomic, strong) UIImageView *funcChevron;
-@property (nonatomic, strong) UIButton *colorButton;
+@property (nonatomic, strong) UIImageView *colorChevron;
 @property (nonatomic, strong) UILabel *sticky;
 @property (nonatomic, strong) UIScrollView *scroll;
 @property (nonatomic, strong) UIStackView *stack;
@@ -191,7 +196,8 @@ static UIColor *ColorFromHex(NSString *hex)
 
     self.ballHeader = [self sectionHeader:@"悬浮球" ball:YES];
     [stack addArrangedSubview:self.ballHeader];
-    [stack addArrangedSubview:[self spacer:8]];
+    UIView *ballGap = [self spacer:4];
+    [stack addArrangedSubview:ballGap];
     NSUInteger ballStart = stack.arrangedSubviews.count;
 
     // 1. 触发方式
@@ -205,13 +211,35 @@ static UIColor *ColorFromHex(NSString *hex)
     [stack addArrangedSubview:[self spacer:10]];
 
     // 2. 颜色（默认折叠，防误触）
-    self.colorButton = [UIButton buttonWithType:UIButtonTypeSystem];
-    self.colorButton.contentHorizontalAlignment = UIControlContentHorizontalAlignmentLeft;
-    self.colorButton.titleLabel.font = [UIFont boldSystemFontOfSize:15];
-    [self.colorButton setTitleColor:[UIColor labelColor] forState:UIControlStateNormal];
-    [self.colorButton.heightAnchor constraintEqualToConstant:30].active = YES;
-    [self.colorButton addTarget:self action:@selector(toggleColor) forControlEvents:UIControlEventTouchUpInside];
-    [stack addArrangedSubview:self.colorButton];
+    UIView *colorRow = [[UIView alloc] init];
+    [colorRow.heightAnchor constraintEqualToConstant:30].active = YES;
+
+    UILabel *colorLabel = [[UILabel alloc] init];
+    colorLabel.text = @"颜色";
+    colorLabel.font = [UIFont boldSystemFontOfSize:15];
+    colorLabel.translatesAutoresizingMaskIntoConstraints = NO;
+    [colorRow addSubview:colorLabel];
+
+    UIImageSymbolConfiguration *chevCfg =
+        [UIImageSymbolConfiguration configurationWithPointSize:18 weight:UIFontWeightSemibold];
+    UIImageView *colorArrow = [[UIImageView alloc] initWithImage:
+                               [UIImage systemImageNamed:@"chevron.right" withConfiguration:chevCfg]];
+    colorArrow.tintColor = [UIColor tertiaryLabelColor];
+    colorArrow.contentMode = UIViewContentModeCenter;
+    colorArrow.translatesAutoresizingMaskIntoConstraints = NO;
+    [colorRow addSubview:colorArrow];
+    self.colorChevron = colorArrow;
+
+    [NSLayoutConstraint activateConstraints:@[
+        [colorLabel.leadingAnchor constraintEqualToAnchor:colorRow.leadingAnchor],
+        [colorLabel.centerYAnchor constraintEqualToAnchor:colorRow.centerYAnchor],
+        [colorArrow.trailingAnchor constraintEqualToAnchor:colorRow.trailingAnchor constant:-16],
+        [colorArrow.centerYAnchor constraintEqualToAnchor:colorRow.centerYAnchor]
+    ]];
+
+    [colorRow addGestureRecognizer:[[UITapGestureRecognizer alloc] initWithTarget:self
+                                                                          action:@selector(toggleColor)]];
+    [stack addArrangedSubview:colorRow];
     NSUInteger colorStart = stack.arrangedSubviews.count;
     self.swatches = [NSMutableArray array];
     NSArray *palette = @[
@@ -301,6 +329,7 @@ static UIColor *ColorFromHex(NSString *hex)
     NSMutableArray *ballAll = [[stack.arrangedSubviews
                                 subarrayWithRange:NSMakeRange(ballStart, ballEnd - ballStart)] mutableCopy];
     [ballAll removeObjectsInArray:self.colorViews];
+    [ballAll addObject:ballGap];          // 收起时连标题下方的留白一起收，板块间距缩到约 2/3
     self.ballViews = ballAll;
 
     [stack addArrangedSubview:[self spacer:18]];
@@ -431,7 +460,7 @@ static UIColor *ColorFromHex(NSString *hex)
     chev.translatesAutoresizingMaskIntoConstraints = NO;
     chev.contentMode = UIViewContentModeScaleAspectFit;
     chev.tintColor = [UIColor secondaryLabelColor];
-    chev.image = [UIImage systemImageNamed:@"chevron.down"];
+    chev.image = [UIImage systemImageNamed:@"chevron.down" withConfiguration:ADXChevronConfig()];
     [box addSubview:chev];
 
     [NSLayoutConstraint activateConstraints:@[
@@ -485,10 +514,12 @@ static UIColor *ColorFromHex(NSString *hex)
         for (UIView *v in self.colorViews) v.hidden = !color;
         for (UIView *v in self.funcViews) v.hidden = !func;
 
-        [self.ballChevron setImage:[UIImage systemImageNamed:(ball ? @"chevron.down" : @"chevron.right")]];
-        [self.funcChevron setImage:[UIImage systemImageNamed:(func ? @"chevron.down" : @"chevron.right")]];
-        [self.colorButton setTitle:(self.colorOpen ? @"颜色 ▾" : @"颜色 ▸")
-                          forState:UIControlStateNormal];
+        [self.ballChevron setImage:[UIImage systemImageNamed:(ball ? @"chevron.down" : @"chevron.right")
+                                     withConfiguration:ADXChevronConfig()]];
+        [self.funcChevron setImage:[UIImage systemImageNamed:(func ? @"chevron.down" : @"chevron.right")
+                                     withConfiguration:ADXChevronConfig()]];
+        self.colorChevron.image = [UIImage systemImageNamed:(self.colorOpen ? @"chevron.down" : @"chevron.right")
+                                            withConfiguration:ADXChevronConfig()];
 
         [self.stack layoutIfNeeded];
         [self.scroll layoutIfNeeded];
