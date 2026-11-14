@@ -14,4 +14,7 @@
 /// 会阻塞当前线程，别在主线程调。
 + (UIImage *)coverImageFor:(int)songId dir:(NSString *)dir;
 
+/// 按直链取曲绘（日服独有曲目没有官方编号）。缓存文件名仍用 songId。
++ (UIImage *)coverImageFor:(int)songId url:(NSString *)url dir:(NSString *)dir;
+
 @end
