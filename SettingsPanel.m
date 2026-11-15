@@ -1,6 +1,7 @@
 // SettingsPanel.m
 #import "SettingsPanel.h"
 #import "B50Image.h"
+#import "ChartDb.h"
 #import <math.h>
 
 NSString *const ADXSettingsChangedNotification = @"ADXSettingsChanged";
