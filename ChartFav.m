@@ -693,6 +693,7 @@ static NSString *FavLevelBucket(double v)
         self.bottomBar.frame = CGRectMake(0, h - barH, w, barH);
         self.search.hidden = on;
         self.chipScroll.hidden = on;
+        self.expandButton.hidden = on;
         CGFloat top = on ? 50 : 138;
         self.table.frame = CGRectMake(0, top, w, h - top - barH);
         [self.table reloadData];

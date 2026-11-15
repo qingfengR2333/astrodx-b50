@@ -444,11 +444,12 @@ static double BRRateOf(NSArray *song, NSArray *chart)
             [rows addObject:@{@"song": s}];
         }
         NSString *t = [NSString stringWithFormat:@"全部曲目（%lu）", (unsigned long)rows.count];
+        NSString *key = [NSString stringWithFormat:@"%ld|%@", (long)self.mode, t];
         if (!self.defaultOpened) {
-            [self.openKeys addObject:t];
+            [self.openKeys addObject:key];
             self.defaultOpened = YES;
         }
-        BOOL open = [self.openKeys containsObject:t];
+        BOOL open = [self.openKeys containsObject:key];
         [out addObject:@{@"title": t, @"rows": (open ? rows : @[]), @"open": @(open)}];
         self.sections = out;
         return;
