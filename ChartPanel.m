@@ -137,7 +137,6 @@ static UIColor *DiffColor(NSInteger d)
     self.backButton.titleLabel.font = [UIFont systemFontOfSize:15 weight:UIFontWeightMedium];
     self.backButton.hidden = YES;
     [self.backButton addTarget:self action:@selector(goBack) forControlEvents:UIControlEventTouchUpInside];
-    [self addSubview:self.backButton];
 
     [self buildEmptyView];
 
@@ -230,7 +229,6 @@ static UIColor *DiffColor(NSInteger d)
     self.detail.frame = CGRectMake(0, top, W, MAX(0, H - top));
     self.emptyView.frame = self.detail.frame;
     self.browse.frame = self.detail.frame;
-    self.backButton.frame = CGRectMake(12, top + 2, 76, 30);
 
     UIView *icon = [self.emptyView viewWithTag:901];
     UILabel *tip = (UILabel *)[self.emptyView viewWithTag:902];
@@ -242,6 +240,9 @@ static UIColor *DiffColor(NSInteger d)
 
     CGFloat sh = MIN(self.hits.count * 58.0, 320.0);
     self.suggest.frame = CGRectMake(16, CGRectGetMaxY(self.search.frame) - 3, W - 32, sh);
+
+    // 首次显示时也要把浏览页摆出来（否则要等设置开关切一次才出现）
+    [self refreshVisibility];
 }
 
 - (void)refreshVisibility
@@ -258,7 +259,6 @@ static UIColor *DiffColor(NSInteger d)
     self.browse.hidden = !browseOn;
     self.emptyView.hidden = hasSong || hasHits || browseOn;
     if (hasHits) [self bringSubviewToFront:self.suggest];
-    if (hasSong) [self bringSubviewToFront:self.backButton];
 }
 
 #pragma mark - 搜索
@@ -350,6 +350,11 @@ static UIColor *DiffColor(NSInteger d)
     CGFloat x = 16;
     CGFloat y0 = 44;          // 顶部留出「返回」按钮的高度
     CGFloat y = y0 + 12;
+
+    // 返回按钮放进滚动内容里，随内容一起滚动，不会再和下面的信息重叠
+    self.backButton.hidden = NO;
+    self.backButton.frame = CGRectMake(x, 4, 76, 30);
+    [self.detail addSubview:self.backButton];
 
     // 曲绘
     CGFloat coverSide = 84;
@@ -838,7 +843,7 @@ static UIColor *DiffColor(NSInteger d)
 - (void)loadCover:(int)songId song:(NSArray *)song into:(UIImageView *)iv
 {
     NSString *dir = self.coverDir.length ? self.coverDir
-                   : [NSHomeDirectory() stringByAppendingPathComponent:@"Documents/covers"];
+                   : [ADXImage coverDir];
     NSString *url = [ADXChartDb coverURL:song];
     NSInteger expect = iv.tag;
     __weak UIImageView *weakIV = iv;

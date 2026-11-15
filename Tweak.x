@@ -62,8 +62,7 @@ static UIColor *ADXDiffColor(int d)
     [self.view addSubview:self.table];
 
     self.chart = [[ADXChartPanel alloc] initWithFrame:CGRectZero];
-    self.chart.coverDir = [[NSHomeDirectory() stringByAppendingPathComponent:@"Documents"]
-                           stringByAppendingPathComponent:@"covers"];
+    self.chart.coverDir = [ADXImage coverDir];
     self.chart.hidden = YES;
     [self.view addSubview:self.chart];
 
@@ -108,7 +107,7 @@ static UIColor *ADXDiffColor(int d)
 
     __weak __typeof(self) weakSelf = self;
     [ADXImage render:self.result
-            coverDir:[docs stringByAppendingPathComponent:@"covers"]
+            coverDir:[ADXImage coverDir]
               toPath:png
           completion:^(UIImage *image, NSError *error) {
         __typeof(weakSelf) me = weakSelf;
@@ -409,14 +408,21 @@ static UINavigationController *gB50Nav;
     gBallLabel.frame = gBall.bounds;
     gBallLabel.text = [ADXSettings text];
     gBallLabel.font = [self fontForBall:side text:gBallLabel.text];
-    // 深色球用白字，浅色球（比如默认的白色）用深字，否则看不见
+    // 用「球色 × 背景透明度」混合后的实际亮度判断字色：
+    // 背景透明度调到 15% 时白球几乎透明，露出的是游戏深色画面，此时必须用白字
     UIColor *ballColor = [ADXSettings color];
-    CGFloat br = 0, bg = 0, bb = 0, ba = 1;
+    CGFloat br = 0, bg = 0, bb = 0, ba = 1, ballAlpha = [ADXSettings alpha];
     if (![ballColor getRed:&br green:&bg blue:&bb alpha:&ba]) { br = bg = bb = 0; }
     CGFloat lum = 0.299 * br + 0.587 * bg + 0.114 * bb;
-    UIColor *ink = (lum > 0.72) ? [UIColor colorWithWhite:0.18 alpha:[ADXSettings textAlpha]]
-                                : [UIColor colorWithWhite:1.0 alpha:[ADXSettings textAlpha]];
+    CGFloat effLum = lum * ballAlpha + 0.10 * (1.0 - ballAlpha);
+    CGFloat textAlpha = [ADXSettings textAlpha];
+    UIColor *ink = (effLum > 0.62) ? [UIColor colorWithWhite:0.16 alpha:textAlpha]
+                                   : [UIColor colorWithWhite:1.0 alpha:textAlpha];
     gBallLabel.textColor = ink;
+    gBallLabel.layer.shadowColor = [(effLum > 0.62 ? [UIColor whiteColor] : [UIColor blackColor]) CGColor];
+    gBallLabel.layer.shadowOpacity = 0.35;
+    gBallLabel.layer.shadowRadius = 1.5;
+    gBallLabel.layer.shadowOffset = CGSizeZero;
 
     [self rebuildB50Items];
 

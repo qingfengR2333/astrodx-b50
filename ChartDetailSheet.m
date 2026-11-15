@@ -119,7 +119,7 @@ static UIColor *SDiffColor(NSInteger d)
     [self.content addSubview:cover];
 
     NSString *dir = coverDir.length ? coverDir
-                   : [NSHomeDirectory() stringByAppendingPathComponent:@"Documents/covers"];
+                   : [ADXImage coverDir];
     NSString *coverURL = [ADXChartDb coverURL:song];
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
         UIImage *img = coverURL.length ? [ADXImage coverImageFor:[song[0] intValue] url:coverURL dir:dir]

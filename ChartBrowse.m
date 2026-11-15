@@ -591,7 +591,7 @@ static double BRRateOf(NSArray *song, NSArray *chart)
     c.cover.image = nil;
     c.cover.tag = c.songId;
     NSString *url = [ADXChartDb coverURL:song];
-    NSString *dir = [NSHomeDirectory() stringByAppendingPathComponent:@"Documents/covers"];
+    NSString *dir = [ADXImage coverDir];
     int sid = [song[0] intValue];
     NSInteger expect = c.songId;
 

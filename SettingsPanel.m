@@ -1,5 +1,6 @@
 // SettingsPanel.m
 #import "SettingsPanel.h"
+#import "B50Image.h"
 #import <math.h>
 
 NSString *const ADXSettingsChangedNotification = @"ADXSettingsChanged";
@@ -14,6 +15,7 @@ static NSString *const kShowScoresKey = @"adx.showScores";
 static NSString *const kShowB50Key    = @"adx.showB50";
 static NSString *const kShowImageKey  = @"adx.showImage";
 static NSString *const kShowBrowseKey = @"adx.showBrowse";
+static NSString *const kPreloadCoversKey = @"adx.preloadCovers";
 
 static NSString *HexFromColor(UIColor *c)
 {
@@ -106,6 +108,12 @@ static UIColor *ColorFromHex(NSString *hex)
     return v ? [[self d] boolForKey:kShowBrowseKey] : YES;
 }
 
++ (BOOL)preloadCovers
+{
+    id v = [[self d] objectForKey:kPreloadCoversKey];
+    return v ? [[self d] boolForKey:kPreloadCoversKey] : NO;
+}
+
 @end
 
 #pragma mark - 面板
@@ -131,6 +139,7 @@ static UIColor *ColorFromHex(NSString *hex)
 @property (nonatomic, strong) UIImageView *funcChevron;
 @property (nonatomic, strong) UIImageView *colorChevron;
 @property (nonatomic, strong) UILabel *sticky;
+@property (nonatomic, strong) UILabel *preloadLabel;
 @property (nonatomic, strong) UIScrollView *scroll;
 @property (nonatomic, strong) UIStackView *stack;
 @property (nonatomic, assign) BOOL ballOpen;
@@ -357,6 +366,17 @@ static UIColor *ColorFromHex(NSString *hex)
     [stack addArrangedSubview:[self switchRow:@"谱面查询显示分类浏览页"
                                           on:[ADXSettings showBrowsePage]
                                       action:@selector(toggleBrowse:)]];
+    [stack addArrangedSubview:[self switchRow:@"预加载曲绘"
+                                          on:[ADXSettings preloadCovers]
+                                      action:@selector(togglePreload:)]];
+
+    UILabel *pl = [[UILabel alloc] initWithFrame:CGRectZero];
+    pl.numberOfLines = 0;
+    pl.font = [UIFont systemFontOfSize:12];
+    pl.textColor = [UIColor secondaryLabelColor];
+    pl.text = @"把全部曲绘下载到本地缓存，浏览时就不会出现灰块。占用约 100–200 MB，保存在系统缓存目录（不会出现在「文件」或相册里）。";
+    self.preloadLabel = pl;
+    [stack addArrangedSubview:pl];
 
     NSUInteger funcEnd = stack.arrangedSubviews.count;
     self.funcViews = [[stack.arrangedSubviews
@@ -700,6 +720,31 @@ static UIColor *ColorFromHex(NSString *hex)
 {
     [[NSUserDefaults standardUserDefaults] setBool:sw.isOn forKey:kShowBrowseKey];
     [[NSNotificationCenter defaultCenter] postNotificationName:ADXSettingsChangedNotification object:nil];
+}
+
+- (void)togglePreload:(UISwitch *)sw
+{
+    [[NSUserDefaults standardUserDefaults] setBool:sw.isOn forKey:kPreloadCoversKey];
+
+    if (!sw.isOn) {
+        [ADXImage cancelPreload];
+        self.preloadLabel.text = @"已停止预加载（已经下载的曲绘会保留）。";
+        return;
+    }
+
+    self.preloadLabel.text = @"正在预加载… 0%";
+    __weak typeof(self) weakSelf = self;
+    [ADXImage preloadCoversWithProgress:^(NSInteger done, NSInteger total) {
+        __typeof(weakSelf) me = weakSelf;
+        if (!me || total <= 0) return;
+        me.preloadLabel.text = [NSString stringWithFormat:@"正在预加载… %ld / %ld（%ld%%）",
+                                (long)done, (long)total, (long)(done * 100 / total)];
+    } completion:^(NSInteger cached) {
+        __typeof(weakSelf) me = weakSelf;
+        if (!me) return;
+        me.preloadLabel.text = [NSString stringWithFormat:@"预加载完成，共 %ld 首有曲绘。下次打开就不会出现灰块了。",
+                                (long)cached];
+    }];
 }
 
 - (void)applySize:(CGFloat)v

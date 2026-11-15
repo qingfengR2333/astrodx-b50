@@ -117,6 +117,41 @@ static void FillRoundGradient(CGRect r, CGFloat radius, UIColor *top, UIColor *b
 
 #pragma mark - 曲绘
 
+// 曲绘统一放在 Library/Caches/covers：不会出现在「文件」App 里，也不会进相册
++ (NSString *)coverDir
+{
+    NSFileManager *fm = [NSFileManager defaultManager];
+    NSString *caches = [NSSearchPathForDirectoriesInDomains(NSCachesDirectory, NSUserDomainMask, YES) firstObject];
+    NSString *dir = [caches stringByAppendingPathComponent:@"covers"];
+    [fm createDirectoryAtPath:dir withIntermediateDirectories:YES attributes:nil error:nil];
+
+    // 老版本存在 Documents/covers，会在「文件」里看到一堆图片，一次性搬走
+    NSString *legacy = [[NSHomeDirectory() stringByAppendingPathComponent:@"Documents"]
+                        stringByAppendingPathComponent:@"covers"];
+    if ([fm fileExistsAtPath:legacy]) {
+        for (NSString *f in [fm contentsOfDirectoryAtPath:legacy error:nil]) {
+            if (![f hasSuffix:@".png"]) continue;
+            NSString *dst = [dir stringByAppendingPathComponent:f];
+            if ([fm fileExistsAtPath:dst]) continue;
+            [fm moveItemAtPath:[legacy stringByAppendingPathComponent:f] toPath:dst error:nil];
+        }
+        [fm removeItemAtPath:legacy error:nil];
+    }
+    return dir;
+}
+
+// 内存缓存：滚动时不至于每次都读盘，也不会因为 cell 复用出现「灰块」
+static NSCache *ADXCoverMem(void)
+{
+    static NSCache *c = nil;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        c = [[NSCache alloc] init];
+        c.countLimit = 320;
+    });
+    return c;
+}
+
 + (NSString *)coverPath:(NSString *)dir songId:(int)sid
 {
     return [dir stringByAppendingPathComponent:[NSString stringWithFormat:@"%05d.png", sid]];
@@ -127,11 +162,19 @@ static void FillRoundGradient(CGRect r, CGFloat radius, UIColor *top, UIColor *b
     if (songId <= 0 || !dir.length) return nil;
 
     NSString *path = [self coverPath:dir songId:songId];
+    UIImage *mem = [ADXCoverMem() objectForKey:path];
+    if (mem) return mem;
+
     UIImage *img = [UIImage imageWithContentsOfFile:path];
-    if (img) return img;
+    if (img) {
+        [ADXCoverMem() setObject:img forKey:path];
+        return img;
+    }
 
     if (![self downloadCover:songId to:dir]) return nil;
-    return [UIImage imageWithContentsOfFile:path];
+    img = [UIImage imageWithContentsOfFile:path];
+    if (img) [ADXCoverMem() setObject:img forKey:path];
+    return img;
 }
 
 /// 日服独有曲目没有官方编号，直接按直链下载（缓存文件名仍用歌曲 id）；直链失败再退回 diving-fish
@@ -140,18 +183,75 @@ static void FillRoundGradient(CGRect r, CGFloat radius, UIColor *top, UIColor *b
     if (songId <= 0 || !dir.length) return nil;
 
     NSString *path = [self coverPath:dir songId:songId];
+    UIImage *mem = [ADXCoverMem() objectForKey:path];
+    if (mem) return mem;
+
     UIImage *img = [UIImage imageWithContentsOfFile:path];
-    if (img) return img;
+    if (img) {
+        [ADXCoverMem() setObject:img forKey:path];
+        return img;
+    }
 
     if (url.length) {
         [self downloadURL:url to:path timeout:10];
         img = [UIImage imageWithContentsOfFile:path];
-        if (img) return img;
+        if (img) {
+            [ADXCoverMem() setObject:img forKey:path];
+            return img;
+        }
     }
 
     // adxdls 上没有（或线路挂了）就退回 diving-fish
     if (![self downloadCover:songId to:dir]) return nil;
-    return [UIImage imageWithContentsOfFile:path];
+    img = [UIImage imageWithContentsOfFile:path];
+    if (img) [ADXCoverMem() setObject:img forKey:path];
+    return img;
+}
+
+/// 把所有曲目的曲绘下载到本地缓存（设置页「预加载曲绘」用）
+static BOOL gPreloadStop = NO;
+
++ (void)cancelPreload
+{
+    gPreloadStop = YES;
+}
+
++ (void)preloadCoversWithProgress:(void (^)(NSInteger done, NSInteger total))progress
+                       completion:(void (^)(NSInteger cached))completion
+{
+    gPreloadStop = NO;
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+        NSArray *songs = [ADXChartDb songs];
+        NSString *dir = [self coverDir];
+        NSFileManager *fm = [NSFileManager defaultManager];
+        NSInteger total = (NSInteger)songs.count;
+        NSInteger cached = 0;
+
+        for (NSInteger i = 0; i < total; i++) {
+            if (gPreloadStop) break;
+            @autoreleasepool {
+                NSArray *s = songs[i];
+                int sid = [ADXChartDb displayId:s];
+                NSString *path = [self coverPath:dir songId:sid];
+                if ([fm fileExistsAtPath:path]) {
+                    cached++;
+                } else {
+                    NSString *url = [ADXChartDb coverURL:s];
+                    UIImage *img = url.length ? [self coverImageFor:sid url:url dir:dir]
+                                              : [self coverImageFor:sid dir:dir];
+                    if (img) cached++;
+                }
+                if (progress && (i % 5 == 0 || i == total - 1)) {
+                    NSInteger done = i + 1;
+                    dispatch_async(dispatch_get_main_queue(), ^{ progress(done, total); });
+                }
+            }
+        }
+
+        if (completion) {
+            dispatch_async(dispatch_get_main_queue(), ^{ completion(cached); });
+        }
+    });
 }
 
 + (BOOL)downloadURL:(NSString *)url to:(NSString *)path timeout:(NSTimeInterval)timeout

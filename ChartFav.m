@@ -7,7 +7,7 @@ static NSString *const kFavKey = @"adx.favs";
 
 static NSString *FavCoverDir(void)
 {
-    return [NSHomeDirectory() stringByAppendingPathComponent:@"Documents/covers"];
+    return [ADXImage coverDir];
 }
 
 // 曲绘内存缓存：多选时反复刷新不再让封面闪一下

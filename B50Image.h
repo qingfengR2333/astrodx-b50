@@ -17,4 +17,14 @@
 /// 按直链取曲绘（日服独有曲目没有官方编号）。缓存文件名仍用 songId。
 + (UIImage *)coverImageFor:(int)songId url:(NSString *)url dir:(NSString *)dir;
 
+/// 曲绘缓存目录（Library/Caches/covers，不会出现在「文件」App 里）
++ (NSString *)coverDir;
+
+/// 把所有曲目的曲绘预加载到本地缓存；progress/completion 都在主线程回调
++ (void)preloadCoversWithProgress:(void (^)(NSInteger done, NSInteger total))progress
+                       completion:(void (^)(NSInteger cached))completion;
+
+/// 停止正在进行的预加载
++ (void)cancelPreload;
+
 @end
