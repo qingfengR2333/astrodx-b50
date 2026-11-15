@@ -254,6 +254,7 @@ static double BRRateOf(NSArray *song, NSArray *chart)
 @property (nonatomic, strong) NSArray *sections;      // 每项 @{@"title", @"rows"}
 @property (nonatomic, strong) NSMutableSet *openKeys; // "mode|title"
 @property (nonatomic, strong) UIButton *favButton;
+@property (nonatomic, strong) UIButton *expandButton;
 @end
 
 @implementation ADXChartBrowse
@@ -294,12 +295,20 @@ static double BRRateOf(NSArray *song, NSArray *chart)
     [self.favButton addTarget:self action:@selector(favTapped) forControlEvents:UIControlEventTouchUpInside];
     [self addSubview:self.favButton];
 
+    // 全部展开 / 全部折叠（纯文字，和「收藏夹」胶囊区分开）
+    self.expandButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    [self.expandButton setTitle:@"全部展开" forState:UIControlStateNormal];
+    self.expandButton.titleLabel.font = [UIFont systemFontOfSize:12.5 weight:UIFontWeightMedium];
+    [self.expandButton setTitleColor:[UIColor systemBlueColor] forState:UIControlStateNormal];
+    [self.expandButton addTarget:self action:@selector(expandAllTapped) forControlEvents:UIControlEventTouchUpInside];
+    [self addSubview:self.expandButton];
+
     self.table = [[UITableView alloc] initWithFrame:CGRectZero style:UITableViewStylePlain];
     self.table.dataSource = self;
     self.table.delegate = self;
     self.table.rowHeight = 58;
     self.table.backgroundColor = [UIColor clearColor];
-    self.table.separatorInset = UIEdgeInsetsMake(0, 66, 0, 0);
+    self.table.separatorInset = UIEdgeInsetsZero;
     self.table.keyboardDismissMode = UIScrollViewKeyboardDismissModeOnDrag;
     [self addSubview:self.table];
 
@@ -337,9 +346,10 @@ static double BRRateOf(NSArray *song, NSArray *chart)
         b.layer.masksToBounds = YES;
         x += bw + 8;
     }
-    self.bar.frame = CGRectMake(0, 0, w - 82, 44);
+    self.bar.frame = CGRectMake(0, 0, w - 82 - 80, 44);
     self.bar.contentSize = CGSizeMake(x + 8, 44);
     self.favButton.frame = CGRectMake(w - 74, 7, 66, 30);
+    self.expandButton.frame = CGRectMake(w - 74 - 76, 7, 72, 30);
 
     self.table.frame = CGRectMake(0, 44, w, self.bounds.size.height - 44);
 }
@@ -365,6 +375,42 @@ static double BRRateOf(NSArray *song, NSArray *chart)
     [self refreshModeButtons];
     [self buildSections];
     [self.table reloadData];
+    [self refreshExpandTitle];
+}
+
+- (void)expandAllTapped
+{
+    if (self.mode == 0) return;
+
+    BOOL allOpen = (self.sections.count > 0);
+    for (NSDictionary *g in self.sections) {
+        NSString *key = [NSString stringWithFormat:@"%ld|%@", (long)self.mode, g[@"title"]];
+        if (![self.openKeys containsObject:key]) { allOpen = NO; break; }
+    }
+
+    for (NSDictionary *g in self.sections) {
+        NSString *key = [NSString stringWithFormat:@"%ld|%@", (long)self.mode, g[@"title"]];
+        if (allOpen) [self.openKeys removeObject:key];
+        else [self.openKeys addObject:key];
+    }
+    [self buildSections];
+    [UIView performWithoutAnimation:^{
+        [self.table reloadData];
+    }];
+    [self refreshExpandTitle];
+}
+
+- (void)refreshExpandTitle
+{
+    if (self.mode == 0) { self.expandButton.hidden = YES; return; }
+    self.expandButton.hidden = NO;
+
+    BOOL allOpen = (self.sections.count > 0);
+    for (NSDictionary *g in self.sections) {
+        NSString *key = [NSString stringWithFormat:@"%ld|%@", (long)self.mode, g[@"title"]];
+        if (![self.openKeys containsObject:key]) { allOpen = NO; break; }
+    }
+    [self.expandButton setTitle:(allOpen ? @"全部折叠" : @"全部展开") forState:UIControlStateNormal];
 }
 
 - (void)headerTapped:(UITapGestureRecognizer *)g
@@ -380,6 +426,7 @@ static double BRRateOf(NSArray *song, NSArray *chart)
 
     [self buildSections];
     [self.table reloadData];
+    [self refreshExpandTitle];
 }
 
 #pragma mark - 生成数据

@@ -375,11 +375,15 @@ static UIColor *ADXCRed(void)
     [ballAll addObject:ballGap];          // 收起时连标题下方的留白一起收，板块间距缩到约 2/3
     self.ballViews = ballAll;
 
-    [stack addArrangedSubview:[self spacer:18]];
+    // 板块之间：分割线 + 更紧的留白（收起时也不会显得空）
+    UIView *divider = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 1, 0.5)];
+    divider.backgroundColor = [UIColor separatorColor];
+    [stack addArrangedSubview:divider];
+    [stack addArrangedSubview:[self spacer:8]];
 
     self.funcHeader = [self sectionHeader:@"功能" ball:NO];
     [stack addArrangedSubview:self.funcHeader];
-    [stack addArrangedSubview:[self spacer:8]];
+    [stack addArrangedSubview:[self spacer:4]];
     NSUInteger funcStart = stack.arrangedSubviews.count;
     [stack addArrangedSubview:[self switchRow:@"首页显示「导出分表」按钮"
                                           on:[ADXSettings showScoresButton]

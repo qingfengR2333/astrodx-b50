@@ -171,10 +171,44 @@ static NSCache *FavCoverCache(void)
 @property (nonatomic, assign) NSInteger mode;          // 0 默认 1 类别 2 难度 3 版本 4 达成率
 @property (nonatomic, strong) NSArray *groups;
 @property (nonatomic, strong) NSMutableSet *openKeys;
+@property (nonatomic, strong) UIButton *expandButton;
 - (void)refreshChips;
+- (void)expandAllTapped;
+- (void)refreshExpandTitle;
 - (void)chipTapped:(UIButton *)b;
 - (NSString *)groupKeyForSong:(NSArray *)s order:(NSInteger *)order;
 - (void)rebuildGroups;
+- (void)expandAllTapped
+{
+    if (self.mode == 0) return;
+
+    BOOL allOpen = (self.groups.count > 0);
+    for (NSDictionary *g in self.groups) {
+        if (![self.openKeys containsObject:g[@"title"]]) { allOpen = NO; break; }
+    }
+
+    for (NSDictionary *g in self.groups) {
+        if (allOpen) [self.openKeys removeObject:g[@"title"]];
+        else [self.openKeys addObject:g[@"title"]];
+    }
+    [UIView performWithoutAnimation:^{
+        [self rebuildGroups];
+    }];
+    [self refreshExpandTitle];
+}
+
+- (void)refreshExpandTitle
+{
+    if (self.mode == 0) { self.expandButton.hidden = YES; return; }
+    self.expandButton.hidden = NO;
+
+    BOOL allOpen = (self.groups.count > 0);
+    for (NSDictionary *g in self.groups) {
+        if (![self.openKeys containsObject:g[@"title"]]) { allOpen = NO; break; }
+    }
+    [self.expandButton setTitle:(allOpen ? @"全部折叠" : @"全部展开") forState:UIControlStateNormal];
+}
+
 - (void)headerTapped:(UITapGestureRecognizer *)g;
 - (NSArray *)songAt:(NSIndexPath *)ip;
 - (double)bestRateOf:(NSArray *)song;
@@ -245,7 +279,7 @@ static NSCache *FavCoverCache(void)
     self.search = sb;
 
     // 第二行：分类胶囊
-    UIScrollView *cs = [[UIScrollView alloc] initWithFrame:CGRectMake(0, 92, w, 46)];
+    UIScrollView *cs = [[UIScrollView alloc] initWithFrame:CGRectMake(0, 92, w - 96, 46)];
     cs.showsHorizontalScrollIndicator = NO;
     cs.autoresizingMask = UIViewAutoresizingFlexibleWidth;
     [card addSubview:cs];
@@ -270,6 +304,17 @@ static NSCache *FavCoverCache(void)
         [self.chips addObject:b];
     }
     cs.contentSize = CGSizeMake(cx, 46);
+
+    // 全部展开 / 全部折叠（纯文字，和胶囊区分开）
+    UIButton *ex = [UIButton buttonWithType:UIButtonTypeSystem];
+    ex.frame = CGRectMake(w - 92, 98, 80, 30);
+    ex.titleLabel.font = [UIFont systemFontOfSize:12.5 weight:UIFontWeightMedium];
+    [ex setTitle:@"全部展开" forState:UIControlStateNormal];
+    [ex setTitleColor:[UIColor systemBlueColor] forState:UIControlStateNormal];
+    [ex addTarget:self action:@selector(expandAllTapped) forControlEvents:UIControlEventTouchUpInside];
+    ex.autoresizingMask = UIViewAutoresizingFlexibleLeftMargin;
+    [card addSubview:ex];
+    self.expandButton = ex;
 
     // 右上角：全选 / 选择（关闭按钮已去掉，点卡片外即可关闭）
     UIButton *all = [UIButton buttonWithType:UIButtonTypeSystem];
@@ -325,7 +370,7 @@ static NSCache *FavCoverCache(void)
     UITableView *table = [[UITableView alloc] initWithFrame:CGRectMake(0, 138, w, h - 138)
                                                       style:UITableViewStylePlain];
     table.backgroundColor = [UIColor clearColor];
-    table.separatorInset = UIEdgeInsetsMake(0, 64, 0, 0);
+    table.separatorInset = UIEdgeInsetsZero;
     table.rowHeight = 58;
     table.dataSource = self;
     table.delegate = self;
@@ -568,6 +613,7 @@ static NSString *FavLevelBucket(double v)
     self.empty.hidden = (self.songs.count > 0);
     self.empty.text = self.all.count ? @"没有匹配的曲目" : @"还没有收藏的曲目";
     [self.table reloadData];
+    [self refreshExpandTitle];
 }
 
 - (void)headerTapped:(UITapGestureRecognizer *)g
@@ -809,7 +855,7 @@ static NSString *FavLevelBucket(double v)
 
 - (CGFloat)tableView:(UITableView *)tableView heightForHeaderInSection:(NSInteger)section
 {
-    return (self.selecting || self.mode == 0) ? 0.0001 : 48;
+    return (self.selecting || self.mode == 0) ? 0.0001 : 44;
 }
 
 - (UIView *)tableView:(UITableView *)tableView viewForHeaderInSection:(NSInteger)section
@@ -820,21 +866,25 @@ static NSString *FavLevelBucket(double v)
     NSDictionary *g = self.groups[section];
     CGFloat w = tableView.bounds.size.width;
 
-    UIView *v = [[UIView alloc] initWithFrame:CGRectMake(0, 0, w, 48)];
+    UIView *v = [[UIView alloc] initWithFrame:CGRectMake(0, 0, w, 44)];
     v.backgroundColor = [UIColor secondarySystemGroupedBackgroundColor];
     v.tag = section;
 
-    UIView *bar = [[UIView alloc] initWithFrame:CGRectMake(16, 14, 4, 20)];
+    UIView *line = [[UIView alloc] initWithFrame:CGRectMake(0, 43.5, w, 0.5)];
+    line.backgroundColor = [UIColor separatorColor];
+    [v addSubview:line];
+
+    UIView *bar = [[UIView alloc] initWithFrame:CGRectMake(16, 12, 4, 20)];
     bar.backgroundColor = [UIColor systemBlueColor];
     bar.layer.cornerRadius = 2;
     [v addSubview:bar];
 
-    UILabel *t = [[UILabel alloc] initWithFrame:CGRectMake(28, 0, w - 28 - 44, 48)];
+    UILabel *t = [[UILabel alloc] initWithFrame:CGRectMake(28, 0, w - 28 - 44, 44)];
     t.text = g[@"title"];
     t.font = [UIFont systemFontOfSize:16 weight:UIFontWeightBold];
     [v addSubview:t];
 
-    UIImageView *chev = [[UIImageView alloc] initWithFrame:CGRectMake(w - 38, 13, 22, 22)];
+    UIImageView *chev = [[UIImageView alloc] initWithFrame:CGRectMake(w - 38, 11, 22, 22)];
     chev.contentMode = UIViewContentModeCenter;
     chev.image = [UIImage systemImageNamed:([g[@"open"] boolValue] ? @"chevron.down" : @"chevron.right")];
     chev.tintColor = [UIColor tertiaryLabelColor];
