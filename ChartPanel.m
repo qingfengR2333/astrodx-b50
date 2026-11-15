@@ -133,8 +133,12 @@ static UIColor *DiffColor(NSInteger d)
     [self addSubview:self.browse];
 
     self.backButton = [UIButton buttonWithType:UIButtonTypeSystem];
-    [self.backButton setTitle:@"‹ 返回" forState:UIControlStateNormal];
-    self.backButton.titleLabel.font = [UIFont systemFontOfSize:15 weight:UIFontWeightMedium];
+    UIImageSymbolConfiguration *bcfg = [UIImageSymbolConfiguration configurationWithPointSize:17
+                                                                                    weight:UIFontWeightSemibold];
+    [self.backButton setImage:[UIImage systemImageNamed:@"chevron.left" withConfiguration:bcfg]
+                     forState:UIControlStateNormal];
+    [self.backButton setTitle:@" 返回" forState:UIControlStateNormal];
+    self.backButton.titleLabel.font = [UIFont systemFontOfSize:16 weight:UIFontWeightMedium];
     self.backButton.hidden = YES;
     [self.backButton addTarget:self action:@selector(goBack) forControlEvents:UIControlEventTouchUpInside];
 
@@ -353,7 +357,7 @@ static UIColor *DiffColor(NSInteger d)
 
     // 返回按钮放进滚动内容里，随内容一起滚动，不会再和下面的信息重叠
     self.backButton.hidden = NO;
-    self.backButton.frame = CGRectMake(x, 4, 76, 30);
+    self.backButton.frame = CGRectMake(x - 6, 2, 88, 32);
     [self.detail addSubview:self.backButton];
 
     // 曲绘

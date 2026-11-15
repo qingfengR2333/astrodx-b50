@@ -208,6 +208,30 @@ static NSCache *ADXCoverMem(void)
     return img;
 }
 
+/// 标记文件：说明「全部曲绘已加载过一次」
+static NSString *ADXCoverMark(NSString *dir)
+{
+    return [dir stringByAppendingPathComponent:@".preloaded"];
+}
+
++ (BOOL)coversPreloaded
+{
+    return [[NSFileManager defaultManager] fileExistsAtPath:ADXCoverMark([self coverDir])];
+}
+
+/// 删除所有曲绘缓存（内存 + 磁盘），下次进页面又会按需加载
++ (void)clearCovers
+{
+    gPreloadStop = YES;
+
+    NSString *dir = [self coverDir];
+    NSFileManager *fm = [NSFileManager defaultManager];
+    for (NSString *f in [fm contentsOfDirectoryAtPath:dir error:nil]) {
+        if (![f hasSuffix:@".png"] && ![f isEqualToString:@".preloaded"]) continue;
+        [fm removeItemAtPath:[dir stringByAppendingPathComponent:f] error:nil];
+    }
+}
+
 /// 把所有曲目的曲绘下载到本地缓存（设置页「预加载曲绘」用）
 static BOOL gPreloadStop = NO;
 
@@ -248,6 +272,9 @@ static BOOL gPreloadStop = NO;
             }
         }
 
+        if (!gPreloadStop) {
+            [@"ok" writeToFile:ADXCoverMark(dir) atomically:YES encoding:NSUTF8StringEncoding error:nil];
+        }
         if (completion) {
             dispatch_async(dispatch_get_main_queue(), ^{ completion(cached); });
         }

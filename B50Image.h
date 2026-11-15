@@ -27,4 +27,10 @@
 /// 停止正在进行的预加载
 + (void)cancelPreload;
 
+/// 是否已经完整预加载过（用库目录里的标记文件判断）
++ (BOOL)coversPreloaded;
+
+/// 清空曲绘缓存（内存 + 磁盘）
++ (void)clearCovers;
+
 @end

@@ -174,6 +174,7 @@ static double BRRateOf(NSArray *song, NSArray *chart)
 
     _chev = [[UIImageView alloc] initWithFrame:CGRectZero];
     _chev.tintColor = [UIColor tertiaryLabelColor];
+    _chev.contentMode = UIViewContentModeCenter;   // 图标按原始比例居中，避免被拉伸
     [self.contentView addSubview:_chev];
     return self;
 }
@@ -191,7 +192,7 @@ static double BRRateOf(NSArray *song, NSArray *chart)
     CGFloat w = self.contentView.bounds.size.width;
     self.accent.frame = CGRectMake(16, (48 - 20) / 2.0, 4, 20);
     self.title.frame = CGRectMake(28, 0, w - 28 - 46, 48);
-    self.chev.frame = CGRectMake(w - 34, (48 - 16) / 2.0, 16, 16);
+    self.chev.frame = CGRectMake(w - 38, (48 - 22) / 2.0, 22, 22);
 }
 
 @end
