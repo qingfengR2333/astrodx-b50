@@ -188,6 +188,7 @@ static NSCache *FavCoverCache(void)
 @property (nonatomic, assign) BOOL dragged;            // 手指移动超过阈值后才允许边缘滚动
 @property (nonatomic, assign) CGFloat scrollSpeed;     // 边缘自动滚动速度（pt/帧）
 @property (nonatomic, strong) CADisplayLink *link;
+@property (nonatomic, strong) NSArray *visibleRows;   // 当前展开出来的行的 indexPath 顺序表
 @end
 
 @implementation ADXChartFavSheet
@@ -598,6 +599,7 @@ static NSString *FavLevelBucket(double v)
     self.empty.hidden = (self.songs.count > 0);
     self.empty.text = self.all.count ? @"没有匹配的曲目" : @"还没有收藏的曲目";
     [self.table reloadData];
+    [self refreshVisibleRows];
     [self refreshExpandTitle];
 }
 
@@ -633,6 +635,8 @@ static NSString *FavLevelBucket(double v)
 
 - (void)headerTapped:(UITapGestureRecognizer *)g
 {
+    if (self.selecting) return;
+
     NSInteger section = g.view.tag;
     if (section < 0 || section >= (NSInteger)self.groups.count) return;
 
@@ -654,10 +658,6 @@ static NSString *FavLevelBucket(double v)
 
 - (NSArray *)songAt:(NSIndexPath *)ip
 {
-    if (self.selecting) {
-        if (ip.row >= (NSInteger)self.songs.count) return nil;
-        return self.songs[ip.row];
-    }
     if (ip.section >= (NSInteger)self.groups.count) return nil;
     NSArray *rows = self.groups[ip.section][@"rows"];
     if (ip.row >= (NSInteger)rows.count) return nil;
@@ -690,12 +690,13 @@ static NSString *FavLevelBucket(double v)
     [UIView performWithoutAnimation:^{
         self.bottomBar.hidden = !on;
         self.bottomBar.frame = CGRectMake(0, h - barH, w, barH);
-        self.search.hidden = on;
+        self.search.hidden = NO;
         self.expandButton.hidden = on;
         self.chipScroll.hidden = NO;
         CGFloat top = 138;
         self.table.frame = CGRectMake(0, top, w, h - top - barH);
         [self.table reloadData];
+        [self refreshVisibleRows];
         [self refreshHeader];
         [self.card layoutIfNeeded];
     }];
@@ -708,10 +709,16 @@ static NSString *FavLevelBucket(double v)
 
 - (void)toggleAll
 {
-    if (self.picked.count == self.songs.count) {
+    NSMutableArray *all = [NSMutableArray array];
+    for (NSIndexPath *ip in self.visibleRows) {
+        NSArray *s = [self songAt:ip];
+        if (s) [all addObject:s[0]];
+    }
+
+    if (all.count && self.picked.count == all.count) {
         [self.picked removeAllObjects];
     } else {
-        for (NSArray *s in self.songs) [self.picked addObject:s[0]];
+        for (id sid in all) [self.picked addObject:sid];
     }
     [self refreshChecks];
     [self refreshHeader];
@@ -723,8 +730,8 @@ static NSString *FavLevelBucket(double v)
     for (UITableViewCell *c in self.table.visibleCells) {
         if (![c isKindOfClass:[ADXFavCell class]]) continue;
         NSIndexPath *ip = [self.table indexPathForCell:c];
-        if (!ip || ip.row >= (NSInteger)self.songs.count) continue;
-        NSArray *s = self.songs[ip.row];
+        NSArray *s = ip ? [self songAt:ip] : nil;
+        if (!s) continue;
         [(ADXFavCell *)c setChecked:[self.picked containsObject:s[0]] selecting:self.selecting];
     }
 }
@@ -751,14 +758,10 @@ static NSString *FavLevelBucket(double v)
 
         NSArray *hit = [self songAt:ip];
         if (!hit) return;
-        NSInteger sid = [hit[0] intValue];
 
         if (!self.selecting) [self setSelectingMode:YES];
 
-        NSInteger idx = NSNotFound;
-        for (NSUInteger i = 0; i < self.songs.count; i++) {
-            if ([self.songs[i][0] intValue] == sid) { idx = (NSInteger)i; break; }
-        }
+        NSInteger idx = (NSInteger)[self.visibleRows indexOfObject:ip];
         if (idx == NSNotFound) return;
 
         // 记住拖动前已有的选中项，拖动只做并集，不清空别人
@@ -789,23 +792,41 @@ static NSString *FavLevelBucket(double v)
     [self stopAutoScroll];
 }
 
+- (void)refreshVisibleRows
+{
+    NSMutableArray *out = [NSMutableArray array];
+    for (NSInteger sec = 0; sec < (NSInteger)self.groups.count; sec++) {
+        NSDictionary *g = self.groups[sec];
+        if (![g[@"open"] boolValue]) continue;
+        NSArray *rows = g[@"rows"];
+        for (NSInteger r = 0; r < (NSInteger)rows.count; r++)
+            [out addObject:[NSIndexPath indexPathForRow:r inSection:sec]];
+    }
+    self.visibleRows = out;
+}
+
 - (void)updateSelectionAtPoint:(CGPoint)p
 {
+    if (self.visibleRows.count == 0) return;
+
     NSIndexPath *ip = [self.table indexPathForRowAtPoint:p];
-    if (!ip && self.songs.count) {
+    NSInteger cur = ip ? (NSInteger)[self.visibleRows indexOfObject:ip] : NSNotFound;
+    if (cur == NSNotFound) {
         // 手指滑出表格时，按方向补到首/末行，保证拖动不中断
         CGFloat h = self.table.contentSize.height;
-        if (p.y < 0) ip = [NSIndexPath indexPathForRow:0 inSection:0];
-        else if (p.y > h) ip = [NSIndexPath indexPathForRow:self.songs.count - 1 inSection:0];
+        if (p.y < 0) cur = 0;
+        else if (p.y > h) cur = (NSInteger)self.visibleRows.count - 1;
+        else return;
     }
-    if (!ip || ip.row >= (NSInteger)self.songs.count) return;
 
-    NSInteger a = MIN(self.dragStart, ip.row);
-    NSInteger b = MAX(self.dragStart, ip.row);
+    NSInteger a = MIN(self.dragStart, cur);
+    NSInteger b = MAX(self.dragStart, cur);
 
     NSMutableSet *set = [NSMutableSet setWithSet:self.dragBase ?: [NSSet set]];
     for (NSInteger i = a; i <= b; i++) {
-        if (i >= 0 && i < (NSInteger)self.songs.count) [set addObject:self.songs[i][0]];
+        if (i < 0 || i >= (NSInteger)self.visibleRows.count) continue;
+        NSArray *s = [self songAt:self.visibleRows[i]];
+        if (s) [set addObject:s[0]];
     }
     self.picked = set;
 
@@ -862,13 +883,11 @@ static NSString *FavLevelBucket(double v)
 
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView
 {
-    if (self.selecting) return 1;
     return (NSInteger)self.groups.count;
 }
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section
 {
-    if (self.selecting) return (NSInteger)self.songs.count;
     if (section >= (NSInteger)self.groups.count) return 0;
     NSDictionary *g = self.groups[section];
     if (![g[@"open"] boolValue]) return 0;
@@ -877,12 +896,11 @@ static NSString *FavLevelBucket(double v)
 
 - (CGFloat)tableView:(UITableView *)tableView heightForHeaderInSection:(NSInteger)section
 {
-    return self.selecting ? 0.0001 : 44;
+    return 44;
 }
 
 - (UIView *)tableView:(UITableView *)tableView viewForHeaderInSection:(NSInteger)section
 {
-    if (self.selecting) return nil;
     if (section >= (NSInteger)self.groups.count) return nil;
 
     NSDictionary *g = self.groups[section];
