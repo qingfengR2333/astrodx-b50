@@ -379,7 +379,7 @@ static UIColor *ADXCRed(void)
     UIView *divider = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 1, 0.5)];
     divider.backgroundColor = [UIColor separatorColor];
     [stack addArrangedSubview:divider];
-    [stack addArrangedSubview:[self spacer:8]];
+    [stack addArrangedSubview:[self spacer:4]];
 
     self.funcHeader = [self sectionHeader:@"功能" ball:NO];
     [stack addArrangedSubview:self.funcHeader];
@@ -605,6 +605,8 @@ static UIColor *ADXCRed(void)
 
     // 不做动画：UIStackView 的 hidden 变化带隐式动画时，iPad 上会残留中间态位置
     [UIView performWithoutAnimation:^{
+        // 收起时把板块之间的间距一并压紧（默认 10，收起后 2）
+        [self.stack setCustomSpacing:(ball ? 10 : 2) afterView:self.ballHeader];
         for (UIView *v in self.ballViews) v.hidden = !ball;
         for (UIView *v in self.colorViews) v.hidden = !color;
         for (UIView *v in self.funcViews) v.hidden = !func;

@@ -172,6 +172,7 @@ static NSCache *FavCoverCache(void)
 @property (nonatomic, strong) NSArray *groups;
 @property (nonatomic, strong) NSMutableSet *openKeys;
 @property (nonatomic, strong) UIButton *expandButton;
+@property (nonatomic, assign) BOOL defaultOpened;
 - (void)refreshChips;
 - (void)expandAllTapped;
 - (void)refreshExpandTitle;
@@ -248,7 +249,7 @@ static NSCache *FavCoverCache(void)
     self.search = sb;
 
     // 第二行：分类胶囊
-    UIScrollView *cs = [[UIScrollView alloc] initWithFrame:CGRectMake(0, 92, w - 96, 46)];
+    UIScrollView *cs = [[UIScrollView alloc] initWithFrame:CGRectMake(0, 92, w - 90, 46)];
     cs.showsHorizontalScrollIndicator = NO;
     cs.autoresizingMask = UIViewAutoresizingFlexibleWidth;
     [card addSubview:cs];
@@ -276,10 +277,14 @@ static NSCache *FavCoverCache(void)
 
     // 全部展开 / 全部折叠（纯文字，和胶囊区分开）
     UIButton *ex = [UIButton buttonWithType:UIButtonTypeSystem];
-    ex.frame = CGRectMake(w - 92, 98, 80, 30);
-    ex.titleLabel.font = [UIFont systemFontOfSize:12.5 weight:UIFontWeightMedium];
+    ex.frame = CGRectMake(w - 82, 98, 66, 30);
+    ex.titleLabel.font = [UIFont systemFontOfSize:12 weight:UIFontWeightMedium];
     [ex setTitle:@"全部展开" forState:UIControlStateNormal];
-    [ex setTitleColor:[UIColor systemBlueColor] forState:UIControlStateNormal];
+    [ex setTitleColor:[UIColor labelColor] forState:UIControlStateNormal];
+    ex.backgroundColor = [UIColor secondarySystemGroupedBackgroundColor];
+    ex.layer.cornerRadius = 15;
+    ex.layer.borderWidth = 0.5;
+    ex.layer.borderColor = [UIColor separatorColor].CGColor;
     [ex addTarget:self action:@selector(expandAllTapped) forControlEvents:UIControlEventTouchUpInside];
     ex.autoresizingMask = UIViewAutoresizingFlexibleLeftMargin;
     [card addSubview:ex];
@@ -548,6 +553,15 @@ static NSString *FavLevelBucket(double v)
     self.songs = src;
 
     NSMutableArray *groups = [NSMutableArray array];
+    if (self.mode == 0) {
+        NSString *t = [NSString stringWithFormat:@"全部收藏（%lu）", (unsigned long)src.count];
+        if (!self.defaultOpened) {
+            [self.openKeys addObject:t];
+            self.defaultOpened = YES;
+        }
+        BOOL open = [self.openKeys containsObject:t];
+        [groups addObject:@{@"title": t, @"rows": (open ? src : @[]), @"open": @(open)}];
+    }
     if (self.mode > 0) {
         NSMutableDictionary *map = [NSMutableDictionary dictionary];
         NSMutableDictionary *orders = [NSMutableDictionary dictionary];
@@ -587,8 +601,6 @@ static NSString *FavLevelBucket(double v)
 
 - (void)expandAllTapped
 {
-    if (self.mode == 0) return;
-
     BOOL allOpen = (self.groups.count > 0);
     for (NSDictionary *g in self.groups) {
         if (![self.openKeys containsObject:g[@"title"]]) { allOpen = NO; break; }
@@ -606,7 +618,6 @@ static NSString *FavLevelBucket(double v)
 
 - (void)refreshExpandTitle
 {
-    if (self.mode == 0) { self.expandButton.hidden = YES; return; }
     self.expandButton.hidden = NO;
 
     BOOL allOpen = (self.groups.count > 0);
@@ -639,7 +650,7 @@ static NSString *FavLevelBucket(double v)
 
 - (NSArray *)songAt:(NSIndexPath *)ip
 {
-    if (self.selecting || self.mode == 0) {
+    if (self.selecting) {
         if (ip.row >= (NSInteger)self.songs.count) return nil;
         return self.songs[ip.row];
     }
@@ -840,13 +851,13 @@ static NSString *FavLevelBucket(double v)
 
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView
 {
-    if (self.selecting || self.mode == 0) return 1;
+    if (self.selecting) return 1;
     return (NSInteger)self.groups.count;
 }
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section
 {
-    if (self.selecting || self.mode == 0) return (NSInteger)self.songs.count;
+    if (self.selecting) return (NSInteger)self.songs.count;
     if (section >= (NSInteger)self.groups.count) return 0;
     NSDictionary *g = self.groups[section];
     if (![g[@"open"] boolValue]) return 0;
@@ -855,12 +866,12 @@ static NSString *FavLevelBucket(double v)
 
 - (CGFloat)tableView:(UITableView *)tableView heightForHeaderInSection:(NSInteger)section
 {
-    return (self.selecting || self.mode == 0) ? 0.0001 : 44;
+    return self.selecting ? 0.0001 : 44;
 }
 
 - (UIView *)tableView:(UITableView *)tableView viewForHeaderInSection:(NSInteger)section
 {
-    if (self.selecting || self.mode == 0) return nil;
+    if (self.selecting) return nil;
     if (section >= (NSInteger)self.groups.count) return nil;
 
     NSDictionary *g = self.groups[section];
