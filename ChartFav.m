@@ -2,6 +2,8 @@
 #import "ChartFav.h"
 #import "ChartDb.h"
 #import "B50Image.h"
+#import "B50Core.h"
+#import <math.h>
 
 static NSString *const kFavKey = @"adx.favs";
 
@@ -146,7 +148,7 @@ static NSCache *FavCoverCache(void)
 
 #pragma mark - 弹窗
 
-@interface ADXChartFavSheet () <UITableViewDataSource, UITableViewDelegate>
+@interface ADXChartFavSheet () <UITableViewDataSource, UITableViewDelegate, UISearchBarDelegate>
 @property (nonatomic, strong) UIView *dim;
 @property (nonatomic, strong) UIView *card;
 @property (nonatomic, strong) UITableView *table;
@@ -163,8 +165,19 @@ static NSCache *FavCoverCache(void)
 @property (nonatomic, assign) BOOL selecting;
 @property (nonatomic, assign) NSInteger dragStart;
 @property (nonatomic, copy) void (^openBlock)(int songId);
-@property (nonatomic, strong) UIButton *sortButton;
-@property (nonatomic, assign) NSInteger sortMode;      // 0 默认 1 名称 2 版本
+@property (nonatomic, strong) UISearchBar *search;
+@property (nonatomic, strong) UIScrollView *chipScroll;
+@property (nonatomic, strong) NSMutableArray *chips;
+@property (nonatomic, assign) NSInteger mode;          // 0 默认 1 类别 2 难度 3 版本 4 达成率
+@property (nonatomic, strong) NSArray *groups;
+@property (nonatomic, strong) NSMutableSet *openKeys;
+- (void)refreshChips;
+- (void)chipTapped:(UIButton *)b;
+- (NSString *)groupKeyForSong:(NSArray *)s order:(NSInteger *)order;
+- (void)rebuildGroups;
+- (void)headerTapped:(UITapGestureRecognizer *)g;
+- (NSArray *)songAt:(NSIndexPath *)ip;
+- (double)bestRateOf:(NSArray *)song;
 @property (nonatomic, strong) NSMutableSet *dragBase;  // 开始拖动时已有的选中项
 @property (nonatomic, assign) CGPoint dragPoint;       // 手指在 table 内容坐标系里的位置
 @property (nonatomic, assign) CGPoint dragOrigin;      // 按下时的位置（判断有没有真的拖动）
@@ -222,15 +235,41 @@ static NSCache *FavCoverCache(void)
     [card addSubview:title];
     self.titleLabel = title;
 
-    // 排序按钮（贴在标题右侧）
-    UIButton *sort = [UIButton buttonWithType:UIButtonTypeSystem];
-    sort.frame = CGRectMake(96, 12, 30, 26);
-    [sort setImage:[UIImage systemImageNamed:@"line.3.horizontal.decrease"] forState:UIControlStateNormal];
-    sort.tintColor = [UIColor secondaryLabelColor];
-    sort.showsMenuAsPrimaryAction = NO;
-    [sort addTarget:self action:@selector(sortTapped) forControlEvents:UIControlEventTouchUpInside];
-    [card addSubview:sort];
-    self.sortButton = sort;
+    // 第一行：搜索框
+    UISearchBar *sb = [[UISearchBar alloc] initWithFrame:CGRectMake(12, 50, w - 24, 44)];
+    sb.searchBarStyle = UISearchBarStyleMinimal;
+    sb.placeholder = @"搜索收藏的曲目";
+    sb.autoresizingMask = UIViewAutoresizingFlexibleWidth;
+    sb.delegate = self;
+    [card addSubview:sb];
+    self.search = sb;
+
+    // 第二行：分类胶囊
+    UIScrollView *cs = [[UIScrollView alloc] initWithFrame:CGRectMake(0, 92, w, 46)];
+    cs.showsHorizontalScrollIndicator = NO;
+    cs.autoresizingMask = UIViewAutoresizingFlexibleWidth;
+    [card addSubview:cs];
+    self.chipScroll = cs;
+    self.chips = [NSMutableArray array];
+    self.openKeys = [NSMutableSet set];
+
+    NSArray *chipNames = @[@"默认", @"类别", @"难度", @"版本", @"达成率"];
+    CGFloat cx = 12;
+    for (NSInteger i = 0; i < (NSInteger)chipNames.count; i++) {
+        UIButton *b = [UIButton buttonWithType:UIButtonTypeSystem];
+        b.tag = i;
+        b.titleLabel.font = [UIFont systemFontOfSize:14 weight:UIFontWeightMedium];
+        b.layer.cornerRadius = 15;
+        b.layer.masksToBounds = YES;
+        [b setTitle:chipNames[i] forState:UIControlStateNormal];
+        [b addTarget:self action:@selector(chipTapped:) forControlEvents:UIControlEventTouchUpInside];
+        CGFloat tw = [chipNames[i] sizeWithAttributes:@{NSFontAttributeName: b.titleLabel.font}].width + 24;
+        b.frame = CGRectMake(cx, 6, tw, 30);
+        cx += tw + 8;
+        [cs addSubview:b];
+        [self.chips addObject:b];
+    }
+    cs.contentSize = CGSizeMake(cx, 46);
 
     // 右上角：全选 / 选择（关闭按钮已去掉，点卡片外即可关闭）
     UIButton *all = [UIButton buttonWithType:UIButtonTypeSystem];
@@ -266,12 +305,16 @@ static NSCache *FavCoverCache(void)
     barLine.backgroundColor = [UIColor separatorColor];
     [bar addSubview:barLine];
 
+    UIColor *favRed = [UIColor colorWithRed:0xB4/255.0 green:0x53/255.0 blue:0x4B/255.0 alpha:1.0];
+
     UIButton *del = [UIButton buttonWithType:UIButtonTypeSystem];
-    del.backgroundColor = [UIColor systemRedColor];
+    del.backgroundColor = [UIColor clearColor];
     del.layer.cornerRadius = 10;
+    del.layer.borderWidth = 1.0;
+    del.layer.borderColor = [favRed colorWithAlphaComponent:0.55].CGColor;
     [del setTitle:@"删除" forState:UIControlStateNormal];
     del.titleLabel.font = [UIFont systemFontOfSize:15 weight:UIFontWeightMedium];
-    [del setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
+    [del setTitleColor:favRed forState:UIControlStateNormal];
     [del addTarget:self action:@selector(deleteTapped) forControlEvents:UIControlEventTouchUpInside];
     [bar addSubview:del];
     self.deleteButton = del;
@@ -279,7 +322,7 @@ static NSCache *FavCoverCache(void)
     // 只剩「删除」，拉通整条底栏（左右各留 16、上下各留 9）
     del.frame = CGRectMake(16, 9, w - 32, 42);
 
-    UITableView *table = [[UITableView alloc] initWithFrame:CGRectMake(0, 50, w, h - 50)
+    UITableView *table = [[UITableView alloc] initWithFrame:CGRectMake(0, 138, w, h - 138)
                                                       style:UITableViewStylePlain];
     table.backgroundColor = [UIColor clearColor];
     table.separatorInset = UIEdgeInsetsMake(0, 64, 0, 0);
@@ -294,7 +337,7 @@ static NSCache *FavCoverCache(void)
     lp.minimumPressDuration = 0.28;
     [table addGestureRecognizer:lp];
 
-    UILabel *empty = [[UILabel alloc] initWithFrame:CGRectMake(0, 130, w, 24)];
+    UILabel *empty = [[UILabel alloc] initWithFrame:CGRectMake(0, 180, w, 24)];
     empty.font = [UIFont systemFontOfSize:14];
     empty.textColor = [UIColor tertiaryLabelColor];
     empty.textAlignment = NSTextAlignmentCenter;
@@ -303,6 +346,7 @@ static NSCache *FavCoverCache(void)
 
     [self reloadFavs];
     [self refreshHeader];
+    [self refreshChips];
 }
 
 #pragma mark - 数据
@@ -315,65 +359,246 @@ static NSCache *FavCoverCache(void)
         if (s) [list addObject:s];
     }
     self.all = list;
-    [self applySort];
+    [self rebuildGroups];
 
     self.empty.hidden = (self.all.count > 0);
     self.empty.text = @"还没有收藏的曲目";
 }
 
-#pragma mark - 排序
+#pragma mark - 分组
 
-- (void)applySort
+- (void)refreshChips
 {
-    NSArray *src = self.all;
-    NSInteger mode = self.sortMode;
-
-    if (mode == 1) {
-        src = [src sortedArrayUsingComparator:^NSComparisonResult(NSArray *a, NSArray *b) {
-            return [(NSString *)a[1] localizedStandardCompare:(NSString *)b[1]];
-        }];
-    } else if (mode == 2) {
-        src = [src sortedArrayUsingComparator:^NSComparisonResult(NSArray *a, NSArray *b) {
-            int va = [a[5] intValue];      // 国服版本码，日服独有为 0
-            int vb = [b[5] intValue];
-            if (va == 0 && vb != 0) return NSOrderedDescending;
-            if (vb == 0 && va != 0) return NSOrderedAscending;
-            if (va != vb) return va < vb ? NSOrderedAscending : NSOrderedDescending;
-            return [(NSString *)a[1] localizedStandardCompare:(NSString *)b[1]];
-        }];
+    for (UIButton *b in self.chips) {
+        BOOL on = (b.tag == self.mode);
+        b.backgroundColor = on ? [UIColor systemBlueColor]
+                               : [UIColor secondarySystemGroupedBackgroundColor];
+        [b setTitleColor:(on ? [UIColor whiteColor] : [UIColor labelColor]) forState:UIControlStateNormal];
     }
+}
 
+- (void)chipTapped:(UIButton *)b
+{
+    self.mode = b.tag;
+    [self refreshChips];
+    [UIView performWithoutAnimation:^{
+        [self rebuildGroups];
+    }];
+    if (self.table.numberOfSections > 0)
+        [self.table scrollToRowAtIndexPath:[NSIndexPath indexPathForRow:0 inSection:0]
+                          atScrollPosition:UITableViewScrollPositionTop animated:NO];
+}
+
+static NSDictionary *FavRateMap(void)
+{
+    static NSDictionary *map;
+    static BOOL loaded = NO;
+    if (loaded) return map;
+    loaded = YES;
+
+    NSMutableDictionary *m = [NSMutableDictionary dictionary];
+    NSString *path = [[NSHomeDirectory() stringByAppendingPathComponent:@"Documents"]
+                      stringByAppendingPathComponent:@"cache"];
+    NSDictionary *obj = [ADXB50 readCacheAt:path error:nil];
+    if ([obj isKindOfClass:[NSDictionary class]]) {
+        NSDictionary *meta = obj[@"level_metadata"];
+        if ([meta isKindOfClass:[NSDictionary class]]) {
+            for (id key in meta) {
+                NSDictionary *item = meta[key];
+                NSArray *diff = item[@"difficulties"];
+                if (![diff isKindOfClass:[NSArray class]]) continue;
+                for (NSDictionary *d in diff) {
+                    id st = d[@"stats"];
+                    if (![st isKindOfClass:[NSDictionary class]]) continue;
+                    NSNumber *rate = ((NSDictionary *)st)[@"achievementRate"];
+                    if (![rate isKindOfClass:[NSNumber class]]) continue;
+                    NSInteger idx = [d[@"id"] integerValue] - 2;
+                    NSString *k = [NSString stringWithFormat:@"%@|%ld", item[@"title"], (long)idx];
+                    m[k] = rate;
+                }
+            }
+        }
+    }
+    map = m;
+    return map;
+}
+
+static NSString *FavRank(double rate)
+{
+    if (rate < 0) return nil;
+    if (rate >= 100.5) return @"SSS+";
+    if (rate >= 100.0) return @"SSS";
+    if (rate >= 99.5)  return @"SS+";
+    if (rate >= 99.0)  return @"SS";
+    if (rate >= 98.0)  return @"S+";
+    if (rate >= 97.0)  return @"S";
+    if (rate >= 94.0)  return @"AAA";
+    if (rate >= 90.0)  return @"AA";
+    if (rate >= 80.0)  return @"A";
+    if (rate >= 75.0)  return @"BBB";
+    if (rate >= 70.0)  return @"BB";
+    if (rate >= 60.0)  return @"B";
+    if (rate >= 50.0)  return @"C";
+    return @"D";
+}
+
+static NSInteger FavRankOrder(NSString *r)
+{
+    NSArray *all = @[@"SSS+", @"SSS", @"SS+", @"SS", @"S+", @"S", @"AAA", @"AA",
+                     @"A", @"BBB", @"BB", @"B", @"C", @"D"];
+    NSInteger i = [all indexOfObject:r];
+    return (i == NSNotFound) ? 99 : i;
+}
+
+/// 这首曲子里最好的那一档（用于分档）
+- (double)bestRateOf:(NSArray *)song
+{
+    NSDictionary *map = FavRateMap();
+    if (map.count == 0) return -1;
+    double best = -1;
+    NSString *title = song[1];
+    for (NSInteger idx = 0; idx < 5; idx++) {
+        NSNumber *n = map[[NSString stringWithFormat:@"%@|%ld", title, (long)idx]];
+        if (n) best = MAX(best, [n doubleValue]);
+    }
+    return best;
+}
+
+/// 难度分档：floor 后，小数 ≥ 0.65 记作「+」
+static NSString *FavLevelBucket(double v)
+{
+    NSInteger base = (NSInteger)floor(v);
+    BOOL plus = (v - base) >= 0.65;
+    return [NSString stringWithFormat:@"Lv%ld%@", (long)base, plus ? @"+" : @""];
+}
+
+- (NSString *)groupKeyForSong:(NSArray *)s order:(NSInteger *)order
+{
+    if (self.mode == 1) {
+        NSString *g = [ADXChartDb jpGenreName:s];
+        if (!g.length) g = [ADXChartDb genreName:s];
+        g = [g stringByReplacingOccurrencesOfString:@"＆" withString:@" "];
+        g = [g stringByReplacingOccurrencesOfString:@"&" withString:@" "];
+        if (!g.length) g = @"其他";
+        *order = 0;
+        return g;
+    }
+    if (self.mode == 2) {
+        double top = 0;
+        BOOL any = NO;
+        for (NSNumber *dx in @[@YES, @NO]) {
+            for (NSArray *c in [ADXChartDb chartsOf:s dx:[dx boolValue]]) {
+                double v = [c[1] doubleValue];
+                if (v > top) { top = v; any = YES; }
+            }
+        }
+        if (!any) return @"其他";
+        *order = -(NSInteger)(top * 100);
+        return FavLevelBucket(top);
+    }
+    if (self.mode == 3) {
+        BOOL dx = [ADXChartDb hasDx:s];
+        NSString *v = [ADXChartDb jpVersionName:s dx:dx];
+        if (!v.length) v = [ADXChartDb versionName:s];
+        if (!v.length) v = @"其他";
+        *order = 0;
+        return v;
+    }
+    if (self.mode == 4) {
+        double r = [self bestRateOf:s];
+        NSString *rank = FavRank(r);
+        if (!rank) return nil;               // 没打过的不参与达标率分档
+        *order = FavRankOrder(rank);
+        return rank;
+    }
+    *order = 0;
+    return nil;
+}
+
+- (void)rebuildGroups
+{
+    NSString *q = [self.search.text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+    NSArray *src = self.all;
+
+    if (q.length) {
+        NSString *lower = [q lowercaseString];
+        NSMutableArray *f = [NSMutableArray array];
+        for (NSArray *s in self.all) {
+            NSString *t = [(NSString *)s[1] lowercaseString];
+            NSString *a = [(NSString *)s[2] lowercaseString];
+            if ([t containsString:lower] || [a containsString:lower]) [f addObject:s];
+        }
+        src = f;
+    }
     self.songs = src;
+
+    NSMutableArray *groups = [NSMutableArray array];
+    if (self.mode > 0) {
+        NSMutableDictionary *map = [NSMutableDictionary dictionary];
+        NSMutableDictionary *orders = [NSMutableDictionary dictionary];
+        for (NSArray *s in src) {
+            NSInteger ord = 0;
+            NSString *key = [self groupKeyForSong:s order:&ord];
+            if (!key.length) continue;
+            NSMutableArray *arr = map[key];
+            if (!arr) {
+                arr = [NSMutableArray array];
+                map[key] = arr;
+                orders[key] = @(ord);
+            }
+            [arr addObject:s];
+        }
+
+        NSArray *keys = [map.allKeys sortedArrayUsingComparator:^NSComparisonResult(NSString *a, NSString *b) {
+            NSInteger oa = [orders[a] integerValue];
+            NSInteger ob = [orders[b] integerValue];
+            if (oa != ob) return oa < ob ? NSOrderedAscending : NSOrderedDescending;
+            return [a localizedStandardCompare:b];
+        }];
+
+        for (NSString *k in keys) {
+            BOOL open = [self.openKeys containsObject:k];
+            [groups addObject:@{@"title": k, @"rows": map[k], @"open": @(open)}];
+        }
+    }
+    self.groups = groups;
+
+    self.empty.hidden = (self.songs.count > 0);
+    self.empty.text = self.all.count ? @"没有匹配的曲目" : @"还没有收藏的曲目";
     [self.table reloadData];
 }
 
-- (void)sortTapped
+- (void)headerTapped:(UITapGestureRecognizer *)g
 {
-    NSArray *names = @[@"默认排序", @"按名称排序", @"按版本排序"];
-    __weak __typeof(self) weakSelf = self;
+    NSInteger section = g.view.tag;
+    if (section < 0 || section >= (NSInteger)self.groups.count) return;
 
-    UIAlertController *ac = [UIAlertController alertControllerWithTitle:@"排序方式"
-                                                              message:nil
-                                                       preferredStyle:UIAlertControllerStyleActionSheet];
-    for (NSInteger i = 0; i < (NSInteger)names.count; i++) {
-        NSString *t = (i == self.sortMode) ? [names[i] stringByAppendingString:@"  ✓"] : names[i];
-        [ac addAction:[UIAlertAction actionWithTitle:t style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
-            __typeof(weakSelf) me = weakSelf;
-            if (!me) return;
-            me.sortMode = i;
-            [UIView performWithoutAnimation:^{
-                [me applySort];
-            }];
-            [me refreshHeader];
-        }]];
+    NSMutableDictionary *d = [self.groups[section] mutableCopy];
+    BOOL open = ![d[@"open"] boolValue];
+    NSString *key = d[@"title"];
+    if (open) [self.openKeys addObject:key]; else [self.openKeys removeObject:key];
+    d[@"open"] = @(open);
+
+    NSMutableArray *arr = [self.groups mutableCopy];
+    arr[section] = d;
+    self.groups = arr;
+
+    [UIView performWithoutAnimation:^{
+        [self.table reloadSections:[NSIndexSet indexSetWithIndex:section]
+                  withRowAnimation:UITableViewRowAnimationNone];
+    }];
+}
+
+- (NSArray *)songAt:(NSIndexPath *)ip
+{
+    if (self.selecting || self.mode == 0) {
+        if (ip.row >= (NSInteger)self.songs.count) return nil;
+        return self.songs[ip.row];
     }
-    [ac addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
-
-    ac.popoverPresentationController.sourceView = self.sortButton;
-    ac.popoverPresentationController.sourceRect = self.sortButton.bounds;
-    UIViewController *host = self.window.rootViewController;
-    while (host.presentedViewController) host = host.presentedViewController;
-    [host presentViewController:ac animated:YES completion:nil];
+    if (ip.section >= (NSInteger)self.groups.count) return nil;
+    NSArray *rows = self.groups[ip.section][@"rows"];
+    if (ip.row >= (NSInteger)rows.count) return nil;
+    return rows[ip.row];
 }
 
 - (void)refreshHeader
@@ -383,11 +608,6 @@ static NSCache *FavCoverCache(void)
     self.titleLabel.text = self.selecting
         ? [NSString stringWithFormat:@"已选 %lu 项", (unsigned long)self.picked.count]
         : @"收藏夹";
-
-    // 排序按钮跟着标题宽度走
-    CGFloat tw = [self.titleLabel sizeThatFits:CGSizeMake(400, 30)].width;
-    self.sortButton.frame = CGRectMake(20 + ceil(tw) + 8, 12, 30, 26);
-    self.sortButton.hidden = self.selecting;
 }
 
 - (void)setSelectingMode:(BOOL)on
@@ -402,11 +622,20 @@ static NSCache *FavCoverCache(void)
     CGFloat h = self.card.bounds.size.height;
     CGFloat barH = on ? 60 : 0;
 
+    if (on) {
+        self.mode = 0;
+        [self refreshChips];
+        [self rebuildGroups];
+    }
+
     // 关掉隐式动画，避免「选择/完成」切换时整块渐隐渐显
     [UIView performWithoutAnimation:^{
         self.bottomBar.hidden = !on;
         self.bottomBar.frame = CGRectMake(0, h - barH, w, barH);
-        self.table.frame = CGRectMake(0, 50, w, h - 50 - barH);
+        self.search.hidden = on;
+        self.chipScroll.hidden = on;
+        CGFloat top = on ? 50 : 138;
+        self.table.frame = CGRectMake(0, top, w, h - top - barH);
         [self.table reloadData];
         [self refreshHeader];
         [self.card layoutIfNeeded];
@@ -561,9 +790,57 @@ static NSCache *FavCoverCache(void)
 
 #pragma mark - 表格
 
+- (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView
+{
+    if (self.selecting || self.mode == 0) return 1;
+    return (NSInteger)self.groups.count;
+}
+
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section
 {
-    return self.songs.count;
+    if (self.selecting || self.mode == 0) return (NSInteger)self.songs.count;
+    if (section >= (NSInteger)self.groups.count) return 0;
+    NSDictionary *g = self.groups[section];
+    if (![g[@"open"] boolValue]) return 0;
+    return (NSInteger)[g[@"rows"] count];
+}
+
+- (CGFloat)tableView:(UITableView *)tableView heightForHeaderInSection:(NSInteger)section
+{
+    return (self.selecting || self.mode == 0) ? 0.0001 : 48;
+}
+
+- (UIView *)tableView:(UITableView *)tableView viewForHeaderInSection:(NSInteger)section
+{
+    if (self.selecting || self.mode == 0) return nil;
+    if (section >= (NSInteger)self.groups.count) return nil;
+
+    NSDictionary *g = self.groups[section];
+    CGFloat w = tableView.bounds.size.width;
+
+    UIView *v = [[UIView alloc] initWithFrame:CGRectMake(0, 0, w, 48)];
+    v.backgroundColor = [UIColor secondarySystemGroupedBackgroundColor];
+    v.tag = section;
+
+    UIView *bar = [[UIView alloc] initWithFrame:CGRectMake(16, 14, 4, 20)];
+    bar.backgroundColor = [UIColor systemBlueColor];
+    bar.layer.cornerRadius = 2;
+    [v addSubview:bar];
+
+    UILabel *t = [[UILabel alloc] initWithFrame:CGRectMake(28, 0, w - 28 - 44, 48)];
+    t.text = g[@"title"];
+    t.font = [UIFont systemFontOfSize:16 weight:UIFontWeightBold];
+    [v addSubview:t];
+
+    UIImageView *chev = [[UIImageView alloc] initWithFrame:CGRectMake(w - 38, 13, 22, 22)];
+    chev.contentMode = UIViewContentModeCenter;
+    chev.image = [UIImage systemImageNamed:([g[@"open"] boolValue] ? @"chevron.down" : @"chevron.right")];
+    chev.tintColor = [UIColor tertiaryLabelColor];
+    [v addSubview:chev];
+
+    UITapGestureRecognizer *tap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(headerTapped:)];
+    [v addGestureRecognizer:tap];
+    return v;
 }
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath
@@ -571,7 +848,8 @@ static NSCache *FavCoverCache(void)
     ADXFavCell *cell = [tableView dequeueReusableCellWithIdentifier:@"fav"];
     if (!cell) cell = [[ADXFavCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:@"fav"];
 
-    NSArray *s = self.songs[indexPath.row];
+    NSArray *s = [self songAt:indexPath];
+    if (!s) return cell;
     cell.name.text = s[1];
     cell.sub.text = [NSString stringWithFormat:@"%@ · %@", s[2], [ADXChartDb numberText:s]];
     [cell setChecked:[self.picked containsObject:s[0]] selecting:self.selecting];
@@ -603,7 +881,8 @@ static NSCache *FavCoverCache(void)
 {
     if (style != UITableViewCellEditingStyleDelete || self.selecting) return;
 
-    NSArray *s = self.songs[indexPath.row];
+    NSArray *s = [self songAt:indexPath];
+    if (!s) return;
     [ADXChartFav toggle:[s[0] intValue]];
     [self reloadFavs];
 }
@@ -612,7 +891,8 @@ static NSCache *FavCoverCache(void)
 {
     [tableView deselectRowAtIndexPath:indexPath animated:YES];
 
-    NSArray *s = self.songs[indexPath.row];
+    NSArray *s = [self songAt:indexPath];
+    if (!s) return;
     if (self.selecting) {
         id key = s[0];
         if ([self.picked containsObject:key]) [self.picked removeObject:key];

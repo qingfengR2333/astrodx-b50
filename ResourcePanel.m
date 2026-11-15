@@ -2,6 +2,22 @@
 #import "ResourcePanel.h"
 #import <math.h>
 
+static UIColor *RPSteel(void)
+{
+    return [UIColor colorWithRed:0x91/255.0 green:0xB1/255.0 blue:0xD0/255.0 alpha:1.0];
+}
+
+static UIColor *RPSteelInk(void)
+{
+    return [UIColor colorWithRed:0x20/255.0 green:0x36/255.0 blue:0x4F/255.0 alpha:1.0];
+}
+
+static UIColor *RPRed(void)
+{
+    return [UIColor colorWithRed:0xB4/255.0 green:0x53/255.0 blue:0x4B/255.0 alpha:1.0];
+}
+
+
 #pragma mark - 列表单元格
 
 @interface ADXResCell : UITableViewCell
@@ -258,9 +274,16 @@
     self.countLabel.font = [UIFont systemFontOfSize:12];
     self.countLabel.textColor = [UIColor secondaryLabelColor];
 
-    self.refreshBtn = [self bottomButton:@"刷新" action:@selector(reloadList) color:[UIColor systemBlueColor]];
-    self.renameBtn = [self bottomButton:@"重命名" action:@selector(renameSelected) color:[UIColor systemBlueColor]];
-    self.deleteBtn = [self bottomButton:@"删除" action:@selector(deleteSelected) color:[UIColor systemRedColor]];
+    self.refreshBtn = [self bottomButton:@"刷新" action:@selector(reloadList) color:RPSteelInk()];
+    self.refreshBtn.backgroundColor = RPSteel();
+
+    self.renameBtn = [self bottomButton:@"重命名" action:@selector(renameSelected) color:RPSteelInk()];
+    self.renameBtn.backgroundColor = RPSteel();
+
+    self.deleteBtn = [self bottomButton:@"删除" action:@selector(deleteSelected) color:RPRed()];
+    self.deleteBtn.backgroundColor = [UIColor clearColor];
+    self.deleteBtn.layer.borderWidth = 1.0;
+    self.deleteBtn.layer.borderColor = [RPRed() colorWithAlphaComponent:0.55].CGColor;
 
     self.bottomBar = [[UIStackView alloc] initWithArrangedSubviews:@[self.refreshBtn, self.renameBtn, self.deleteBtn]];
     self.bottomBar.axis = UILayoutConstraintAxisHorizontal;
