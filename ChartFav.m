@@ -178,37 +178,6 @@ static NSCache *FavCoverCache(void)
 - (void)chipTapped:(UIButton *)b;
 - (NSString *)groupKeyForSong:(NSArray *)s order:(NSInteger *)order;
 - (void)rebuildGroups;
-- (void)expandAllTapped
-{
-    if (self.mode == 0) return;
-
-    BOOL allOpen = (self.groups.count > 0);
-    for (NSDictionary *g in self.groups) {
-        if (![self.openKeys containsObject:g[@"title"]]) { allOpen = NO; break; }
-    }
-
-    for (NSDictionary *g in self.groups) {
-        if (allOpen) [self.openKeys removeObject:g[@"title"]];
-        else [self.openKeys addObject:g[@"title"]];
-    }
-    [UIView performWithoutAnimation:^{
-        [self rebuildGroups];
-    }];
-    [self refreshExpandTitle];
-}
-
-- (void)refreshExpandTitle
-{
-    if (self.mode == 0) { self.expandButton.hidden = YES; return; }
-    self.expandButton.hidden = NO;
-
-    BOOL allOpen = (self.groups.count > 0);
-    for (NSDictionary *g in self.groups) {
-        if (![self.openKeys containsObject:g[@"title"]]) { allOpen = NO; break; }
-    }
-    [self.expandButton setTitle:(allOpen ? @"全部折叠" : @"全部展开") forState:UIControlStateNormal];
-}
-
 - (void)headerTapped:(UITapGestureRecognizer *)g;
 - (NSArray *)songAt:(NSIndexPath *)ip;
 - (double)bestRateOf:(NSArray *)song;
@@ -614,6 +583,37 @@ static NSString *FavLevelBucket(double v)
     self.empty.text = self.all.count ? @"没有匹配的曲目" : @"还没有收藏的曲目";
     [self.table reloadData];
     [self refreshExpandTitle];
+}
+
+- (void)expandAllTapped
+{
+    if (self.mode == 0) return;
+
+    BOOL allOpen = (self.groups.count > 0);
+    for (NSDictionary *g in self.groups) {
+        if (![self.openKeys containsObject:g[@"title"]]) { allOpen = NO; break; }
+    }
+
+    for (NSDictionary *g in self.groups) {
+        if (allOpen) [self.openKeys removeObject:g[@"title"]];
+        else [self.openKeys addObject:g[@"title"]];
+    }
+    [UIView performWithoutAnimation:^{
+        [self rebuildGroups];
+    }];
+    [self refreshExpandTitle];
+}
+
+- (void)refreshExpandTitle
+{
+    if (self.mode == 0) { self.expandButton.hidden = YES; return; }
+    self.expandButton.hidden = NO;
+
+    BOOL allOpen = (self.groups.count > 0);
+    for (NSDictionary *g in self.groups) {
+        if (![self.openKeys containsObject:g[@"title"]]) { allOpen = NO; break; }
+    }
+    [self.expandButton setTitle:(allOpen ? @"全部折叠" : @"全部展开") forState:UIControlStateNormal];
 }
 
 - (void)headerTapped:(UITapGestureRecognizer *)g
