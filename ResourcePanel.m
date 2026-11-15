@@ -188,6 +188,8 @@
 @property (nonatomic, assign) NSInteger sortMode;   // 0 名称 1 日期 2 大小
 
 @property (nonatomic, assign) BOOL selecting;
+- (void)askDeleteFinalConfirm;
+- (void)performDeleteSelected;
 @property (nonatomic, assign) BOOL dragging;
 @property (nonatomic, assign) CGPoint dragPointView;   // 手指位置（self.view 坐标）
 @property (nonatomic, assign) CGPoint startPointView;
@@ -893,28 +895,53 @@
 {
     if (self.selected.count == 0) { [self alert:@"还没有选择" message:@"先勾选要删除的文件夹。"]; return; }
 
+    // 第一步：只讲删多少、不可撤销
+    NSUInteger n = self.selected.count;
+    NSString *kind = [self.kind isEqualToString:@"skins"] ? @"皮肤" : @"谱面";
+
+    UIAlertController *step1 = [UIAlertController
+        alertControllerWithTitle:@"确认删除"
+                         message:[NSString stringWithFormat:@"将删除 %lu 个%@文件夹，且不可恢复。",
+                                  (unsigned long)n, kind]
+                  preferredStyle:UIAlertControllerStyleAlert];
+    [step1 addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
+    __weak typeof(self) weakSelf = self;
+    [step1 addAction:[UIAlertAction actionWithTitle:@"继续" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
+        [weakSelf askDeleteFinalConfirm];
+    }]];
+    [self presentViewController:step1 animated:YES completion:nil];
+}
+
+- (void)askDeleteFinalConfirm
+{
+    NSUInteger n = self.selected.count;
+    NSString *kind = [self.kind isEqualToString:@"skins"] ? @"皮肤" : @"谱面";
+
+    UIAlertController *step2 = [UIAlertController
+        alertControllerWithTitle:@"最后确认"
+                         message:[NSString stringWithFormat:@"这 %lu 个%@文件夹会被永久删除，无法恢复。",
+                                  (unsigned long)n, kind]
+                  preferredStyle:UIAlertControllerStyleAlert];
+    [step2 addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
+    __weak typeof(self) weakSelf = self;
+    [step2 addAction:[UIAlertAction actionWithTitle:@"删除" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *a) {
+        [weakSelf performDeleteSelected];
+    }]];
+    [self presentViewController:step2 animated:YES completion:nil];
+}
+
+- (void)performDeleteSelected
+{
     NSString *dir = [self directory];
     NSMutableArray *paths = [NSMutableArray array];
     for (NSString *n in self.selected) [paths addObject:[dir stringByAppendingPathComponent:n]];
 
-    UIAlertController *a = [UIAlertController
-        alertControllerWithTitle:@"确认删除"
-                         message:[NSString stringWithFormat:@"将删除 %lu 个文件夹，且不可恢复。",
-                                  (unsigned long)paths.count]
-                  preferredStyle:UIAlertControllerStyleActionSheet];
-    [a addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
-    [a addAction:[UIAlertAction actionWithTitle:@"删除" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *act) {
-        NSFileManager *fm = [NSFileManager defaultManager];
-        int failed = 0;
-        for (NSString *p in paths) if (![fm removeItemAtPath:p error:nil]) failed++;
-        [self.selected removeAllObjects];
-        [self reloadList];
-        if (failed) [self alert:@"部分删除失败" message:[NSString stringWithFormat:@"%d 个文件夹删除失败。", failed]];
-    }]];
-    a.popoverPresentationController.sourceView = self.view;
-    a.popoverPresentationController.sourceRect = CGRectMake(CGRectGetMidX(self.view.bounds),
-                                                            CGRectGetMidY(self.view.bounds), 1, 1);
-    [self presentViewController:a animated:YES completion:nil];
+    NSFileManager *fm = [NSFileManager defaultManager];
+    int failed = 0;
+    for (NSString *p in paths) if (![fm removeItemAtPath:p error:nil]) failed++;
+    [self.selected removeAllObjects];
+    [self reloadList];
+    if (failed) [self alert:@"部分删除失败" message:[NSString stringWithFormat:@"%d 个文件夹删除失败。", failed]];
 }
 
 - (void)alert:(NSString *)title message:(NSString *)message

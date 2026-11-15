@@ -135,6 +135,9 @@ static UIColor *ColorFromHex(NSString *hex)
 @property (nonatomic, strong) UILabel *sticky;
 @property (nonatomic, strong) UILabel *preloadLabel;
 @property (nonatomic, assign) BOOL preloading;
+
+- (UIViewController *)topPresenter;
+- (void)askFinalConfirm;
 @property (nonatomic, strong) UIButton *preloadButton;
 @property (nonatomic, strong) UIButton *clearCoversButton;
 @property (nonatomic, strong) UIProgressView *preloadProgress;
@@ -850,16 +853,8 @@ static UIColor *ADXCRed(void)
     }];
 }
 
-- (void)clearCoversTapped
+- (UIViewController *)topPresenter
 {
-    UIAlertController *ac = [UIAlertController alertControllerWithTitle:@"删除曲绘缓存？"
-                                                               message:@"删除后曲绘会恢复成每次进页面按需加载。"
-                                                        preferredStyle:UIAlertControllerStyleAlert];
-    [ac addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
-    [ac addAction:[UIAlertAction actionWithTitle:@"删除" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *a) {
-        [ADXImage clearCovers];
-        [self refreshCoverCacheUI];
-    }]];
     UIWindow *win = self.view.window;
     if (!win) {
         for (UIWindow *w in [UIApplication sharedApplication].windows) {
@@ -868,7 +863,43 @@ static UIColor *ADXCRed(void)
     }
     UIViewController *host = win.rootViewController;
     while (host.presentedViewController) host = host.presentedViewController;
-    [host presentViewController:ac animated:YES completion:nil];
+    return host;
+}
+
+- (void)clearCoversTapped
+{
+    NSInteger total = (NSInteger)[ADXChartDb songs].count;
+    NSInteger have = [ADXImage cachedCoverCount];
+    NSString *used = ADXSizeText([ADXImage coverCacheSize]);
+
+    NSString *msg = [NSString stringWithFormat:@"当前已缓存 %ld / %ld 张，占用 %@。删除后浏览时会重新出现灰块。",
+                     (long)have, (long)total, used];
+
+    UIAlertController *step1 = [UIAlertController alertControllerWithTitle:@"删除曲绘缓存？"
+                                                                  message:msg
+                                                           preferredStyle:UIAlertControllerStyleAlert];
+    [step1 addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
+    __weak typeof(self) weakSelf = self;
+    [step1 addAction:[UIAlertAction actionWithTitle:@"继续" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
+        [weakSelf askFinalConfirm];
+    }]];
+    [[self topPresenter] presentViewController:step1 animated:YES completion:nil];
+}
+
+- (void)askFinalConfirm
+{
+    UIAlertController *step2 = [UIAlertController alertControllerWithTitle:@"确认删除？"
+                                                                  message:@"这一步不可撤销，删除后需要重新预加载才能恢复。"
+                                                           preferredStyle:UIAlertControllerStyleAlert];
+    [step2 addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
+    __weak typeof(self) weakSelf = self;
+    [step2 addAction:[UIAlertAction actionWithTitle:@"删除" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *a) {
+        __typeof(weakSelf) me = weakSelf;
+        if (!me) return;
+        [ADXImage clearCovers];
+        [me refreshCoverCacheUI];
+    }]];
+    [[self topPresenter] presentViewController:step2 animated:YES completion:nil];
 }
 
 - (void)applySize:(CGFloat)v
