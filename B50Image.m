@@ -269,7 +269,9 @@ static BOOL gPreloadStop = NO;
         NSString *dir = [self coverDir];
         NSFileManager *fm = [NSFileManager defaultManager];
         NSInteger total = (NSInteger)songs.count;
-        NSInteger cached = 0;
+        // 起始值就是「已经缓存了多少张」，和设置页空闲时显示的数字同源；
+        // 循环里只对「新下载成功」的加一，已有的在开头已经算过
+        NSInteger cached = [self cachedCoverCount];
 
         for (NSInteger i = 0; i < total; i++) {
             if (gPreloadStop) break;
@@ -277,17 +279,15 @@ static BOOL gPreloadStop = NO;
                 NSArray *s = songs[i];
                 int sid = [ADXChartDb displayId:s];
                 NSString *path = [self coverPath:dir songId:sid];
-                if ([fm fileExistsAtPath:path]) {
-                    cached++;
-                } else {
+                if (![fm fileExistsAtPath:path]) {
                     NSString *url = [ADXChartDb coverURL:s];
                     UIImage *img = url.length ? [self coverImageFor:sid url:url dir:dir]
                                               : [self coverImageFor:sid dir:dir];
                     if (img) cached++;
                 }
                 if (progress && (i % 5 == 0 || i == total - 1)) {
-                    NSInteger done = i + 1;
-                    dispatch_async(dispatch_get_main_queue(), ^{ progress(done, total); });
+                    NSInteger now = MIN(cached, total);
+                    dispatch_async(dispatch_get_main_queue(), ^{ progress(now, total); });
                 }
             }
         }
