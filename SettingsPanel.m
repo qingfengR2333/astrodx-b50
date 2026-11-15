@@ -133,6 +133,7 @@ static UIColor *ColorFromHex(NSString *hex)
 @property (nonatomic, strong) UIImageView *colorChevron;
 @property (nonatomic, strong) UILabel *sticky;
 @property (nonatomic, strong) UILabel *preloadLabel;
+@property (nonatomic, assign) BOOL preloading;
 @property (nonatomic, strong) UIButton *preloadButton;
 @property (nonatomic, strong) UIButton *clearCoversButton;
 @property (nonatomic, strong) UIProgressView *preloadProgress;
@@ -155,6 +156,22 @@ static UIColor *ColorFromHex(NSString *hex)
 - (UIView *)sectionHeader:(NSString *)title ball:(BOOL)ball;
 - (void)applyCollapse;
 @end
+
+// 导入模块用的钢蓝配色，曲绘缓存按钮沿用
+static UIColor *ADXSteel(void)
+{
+    return [UIColor colorWithRed:0x91 / 255.0 green:0xB1 / 255.0 blue:0xD0 / 255.0 alpha:1.0];
+}
+
+static UIColor *ADXSteelInk(void)
+{
+    return [UIColor colorWithRed:0x20 / 255.0 green:0x36 / 255.0 blue:0x4F / 255.0 alpha:1.0];
+}
+
+static UIColor *ADXCRed(void)
+{
+    return [UIColor colorWithRed:0xB4 / 255.0 green:0x53 / 255.0 blue:0x4B / 255.0 alpha:1.0];
+}
 
 @implementation ADXSettingsPanel
 
@@ -363,14 +380,36 @@ static UIColor *ColorFromHex(NSString *hex)
     [stack addArrangedSubview:[self switchRow:@"谱面查询显示分类浏览页"
                                           on:[ADXSettings showBrowsePage]
                                       action:@selector(toggleBrowse:)]];
-    // 曲绘缓存：一次性按钮 + 进度条 + 删除缓存
+    // 曲绘缓存：一次性按钮 + 进度条 + 删除缓存（同一行并排）
+    UIStackView *coverRow = [[UIStackView alloc] initWithFrame:CGRectZero];
+    coverRow.axis = UILayoutConstraintAxisHorizontal;
+    coverRow.spacing = 10;
+    coverRow.distribution = UIStackViewDistributionFillEqually;
+    coverRow.alignment = UIStackViewAlignmentFill;
+    coverRow.translatesAutoresizingMaskIntoConstraints = NO;
+    [coverRow.heightAnchor constraintEqualToConstant:42].active = YES;
+
     self.preloadButton = [UIButton buttonWithType:UIButtonTypeSystem];
-    self.preloadButton.frame = CGRectMake(0, 0, 320, 42);
-    self.preloadButton.layer.cornerRadius = 10;
     self.preloadButton.titleLabel.font = [UIFont systemFontOfSize:15 weight:UIFontWeightSemibold];
+    self.preloadButton.layer.cornerRadius = 10;
+    self.preloadButton.layer.masksToBounds = YES;
     [self.preloadButton addTarget:self action:@selector(preloadTapped)
                  forControlEvents:UIControlEventTouchUpInside];
-    [stack addArrangedSubview:self.preloadButton];
+    [coverRow addArrangedSubview:self.preloadButton];
+
+    self.clearCoversButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    self.clearCoversButton.titleLabel.font = [UIFont systemFontOfSize:15 weight:UIFontWeightMedium];
+    self.clearCoversButton.layer.cornerRadius = 10;
+    self.clearCoversButton.layer.borderWidth = 0.5;
+    self.clearCoversButton.layer.borderColor = ADXCRed().CGColor;
+    self.clearCoversButton.backgroundColor = [UIColor clearColor];
+    [self.clearCoversButton setTitle:@"删除曲绘缓存" forState:UIControlStateNormal];
+    [self.clearCoversButton setTitleColor:ADXCRed() forState:UIControlStateNormal];
+    [self.clearCoversButton addTarget:self action:@selector(clearCoversTapped)
+                     forControlEvents:UIControlEventTouchUpInside];
+    [coverRow addArrangedSubview:self.clearCoversButton];
+
+    [stack addArrangedSubview:coverRow];
 
     self.preloadProgress = [[UIProgressView alloc] initWithProgressViewStyle:UIProgressViewStyleDefault];
     self.preloadProgress.hidden = YES;
@@ -380,20 +419,9 @@ static UIColor *ColorFromHex(NSString *hex)
     pl.numberOfLines = 0;
     pl.font = [UIFont systemFontOfSize:12];
     pl.textColor = [UIColor secondaryLabelColor];
+    pl.text = @"把全部曲绘缓存到本地（约 150–200 MB，Wi-Fi 下大约 10–20 分钟），之后浏览就不会再出现灰块。";
     self.preloadLabel = pl;
     [stack addArrangedSubview:pl];
-
-    self.clearCoversButton = [UIButton buttonWithType:UIButtonTypeSystem];
-    self.clearCoversButton.frame = CGRectMake(0, 0, 320, 42);
-    self.clearCoversButton.layer.cornerRadius = 10;
-    self.clearCoversButton.layer.borderWidth = 0.5;
-    self.clearCoversButton.layer.borderColor = [UIColor separatorColor].CGColor;
-    self.clearCoversButton.titleLabel.font = [UIFont systemFontOfSize:15 weight:UIFontWeightMedium];
-    [self.clearCoversButton setTitle:@"删除曲绘缓存" forState:UIControlStateNormal];
-    [self.clearCoversButton setTitleColor:[UIColor systemRedColor] forState:UIControlStateNormal];
-    [self.clearCoversButton addTarget:self action:@selector(clearCoversTapped)
-                     forControlEvents:UIControlEventTouchUpInside];
-    [stack addArrangedSubview:self.clearCoversButton];
 
     [self refreshCoverCacheUI];
 
@@ -745,46 +773,65 @@ static UIColor *ColorFromHex(NSString *hex)
 - (void)refreshCoverCacheUI
 {
     BOOL done = [ADXImage coversPreloaded];
+    BOOL busy = self.preloading;
 
-    self.preloadButton.enabled = !done;
-    self.preloadButton.backgroundColor = done ? [UIColor tertiarySystemFillColor]
-                                              : [UIColor systemBlueColor];
-    [self.preloadButton setTitle:(done ? @"已加载" : @"预加载曲绘") forState:UIControlStateNormal];
-    [self.preloadButton setTitleColor:(done ? [UIColor secondaryLabelColor] : [UIColor whiteColor])
+    NSString *title = busy ? @"取消加载" : (done ? @"已加载" : @"预加载曲绘");
+    [self.preloadButton setTitle:title forState:UIControlStateNormal];
+    self.preloadButton.enabled = busy || !done;
+    self.preloadButton.backgroundColor = (done && !busy) ? [UIColor tertiarySystemFillColor] : ADXSteel();
+    [self.preloadButton setTitleColor:(done && !busy) ? [UIColor secondaryLabelColor] : ADXSteelInk()
                              forState:UIControlStateNormal];
     [self.preloadButton setTitleColor:[UIColor secondaryLabelColor] forState:UIControlStateDisabled];
 
-    self.clearCoversButton.hidden = !done;
-    self.preloadProgress.hidden = (self.preloadProgress.progress <= 0.0 || self.preloadProgress.progress >= 1.0);
+    self.preloadProgress.hidden = !busy;
+
+    if (busy) return;                 // 进度文案由 preloadTapped 维护
 
     if (done) {
-        self.preloadLabel.text = @"曲绘已全部缓存到本地，浏览时不会再出现灰块。可随时删掉（占用约 100–200 MB）。";
+        self.preloadLabel.text = @"曲绘已全部缓存到本地，浏览时不会再出现灰块。可随时删除。";
     } else {
-        self.preloadLabel.text = @"把全部曲绘下载到本地缓存，浏览时就不会出现灰块。保存在系统缓存目录，不会出现在「文件」或相册里。";
+        self.preloadLabel.text = @"把全部曲绘缓存到本地（约 150–200 MB，Wi-Fi 下大约 10–20 分钟），之后浏览就不会再出现灰块。";
     }
 }
 
 - (void)preloadTapped
 {
-    if (!self.preloadButton.enabled) return;
+    if (self.preloading) {            // 再次点击 = 取消
+        [ADXImage cancelPreload];
+        self.preloading = NO;
+        self.preloadProgress.hidden = YES;
+        self.preloadLabel.text = @"已取消加载。已下载的曲绘会保留，下次可以继续。";
+        [self refreshCoverCacheUI];
+        return;
+    }
 
-    self.preloadButton.enabled = NO;
-    self.preloadProgress.hidden = NO;
-    self.preloadProgress.progress = 0;
-    self.preloadLabel.text = @"正在预加载… 0%";
+    if ([ADXImage coversPreloaded]) return;
+
+    self.preloading = YES;
+    NSInteger total = (NSInteger)[ADXChartDb songs].count;
+    NSInteger have = [ADXImage cachedCoverCount];
+    self.preloadProgress.progress = total ? (CGFloat)have / (CGFloat)total : 0;
+    self.preloadLabel.text = [NSString stringWithFormat:@"正在预加载… %ld / %ld（%ld%%）",
+                              (long)have, (long)total, total ? (long)(have * 100 / total) : 0];
+    [self refreshCoverCacheUI];
 
     __weak typeof(self) weakSelf = self;
-    [ADXImage preloadCoversWithProgress:^(NSInteger done, NSInteger total) {
+    [ADXImage preloadCoversWithProgress:^(NSInteger done, NSInteger all) {
         __typeof(weakSelf) me = weakSelf;
-        if (!me || total <= 0) return;
-        me.preloadProgress.progress = (float)done / (float)total;
+        if (!me || all <= 0) return;
+        me.preloadProgress.progress = (float)done / (float)all;
         me.preloadLabel.text = [NSString stringWithFormat:@"正在预加载… %ld / %ld（%ld%%）",
-                                (long)done, (long)total, (long)(done * 100 / total)];
+                                (long)done, (long)all, (long)(done * 100 / all)];
     } completion:^(NSInteger cached) {
         __typeof(weakSelf) me = weakSelf;
         if (!me) return;
-        me.preloadProgress.progress = 1.0;
+        me.preloading = NO;
         me.preloadProgress.hidden = YES;
+        if ([ADXImage coversPreloaded]) {
+            me.preloadLabel.text = @"曲绘已全部缓存到本地，浏览时不会再出现灰块。可随时删除。";
+        } else {
+            me.preloadLabel.text = @"已取消加载。已下载的曲绘会保留，下次可以继续。";
+        }
         [me refreshCoverCacheUI];
     }];
 }

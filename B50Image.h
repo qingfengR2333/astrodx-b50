@@ -27,6 +27,9 @@
 /// 停止正在进行的预加载
 + (void)cancelPreload;
 
+/// 已经缓存到本地的曲绘数量（预加载进度从这里起算）
++ (NSInteger)cachedCoverCount;
+
 /// 是否已经完整预加载过（用库目录里的标记文件判断）
 + (BOOL)coversPreloaded;
 

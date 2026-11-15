@@ -240,6 +240,17 @@ static BOOL gPreloadStop = NO;
     gPreloadStop = YES;
 }
 
++ (NSInteger)cachedCoverCount
+{
+    NSString *dir = [self coverDir];
+    NSArray *files = [[NSFileManager defaultManager] contentsOfDirectoryAtPath:dir error:nil];
+    NSInteger n = 0;
+    for (NSString *f in files) {
+        if ([f hasSuffix:@".png"]) n++;
+    }
+    return n;
+}
+
 + (void)preloadCoversWithProgress:(void (^)(NSInteger done, NSInteger total))progress
                        completion:(void (^)(NSInteger cached))completion
 {
