@@ -159,6 +159,15 @@ static UIColor *ColorFromHex(NSString *hex)
 @end
 
 // 导入模块用的钢蓝配色，曲绘缓存按钮沿用
+static NSString *ADXSizeText(unsigned long long bytes)
+{
+    if (bytes == 0) return @"0 MB";
+    double mb = (double)bytes / 1024.0 / 1024.0;
+    if (mb < 1.0) return [NSString stringWithFormat:@"%.0f KB", (double)bytes / 1024.0];
+    if (mb < 100.0) return [NSString stringWithFormat:@"%.1f MB", mb];
+    return [NSString stringWithFormat:@"%.0f MB", mb];
+}
+
 static UIColor *ADXSteel(void)
 {
     return [UIColor colorWithRed:0x91 / 255.0 green:0xB1 / 255.0 blue:0xD0 / 255.0 alpha:1.0];
@@ -793,15 +802,17 @@ static UIColor *ADXCRed(void)
     self.preloadProgress.progress = total ? (CGFloat)have / (CGFloat)total : 0;
 
     long pct = total ? (long)(have * 100 / total) : 0;
+    NSString *used = ADXSizeText([ADXImage coverCacheSize]);
     if (done) {
-        self.preloadLabel.text = [NSString stringWithFormat:@"已缓存 %ld / %ld（100%%）· 可随时删除。",
-                                  (long)total, (long)total];
+        self.preloadLabel.text = [NSString stringWithFormat:
+            @"已全部缓存 %ld 张 · 当前占用 %@ · 可随时删除。", (long)total, used];
     } else if (have > 0) {
         self.preloadLabel.text = [NSString stringWithFormat:
-            @"已缓存 %ld / %ld（%ld%%）· 全部缓存约 150–200 MB，Wi-Fi 下 10–20 分钟。",
-            (long)have, (long)total, pct];
+            @"已缓存 %ld / %ld（%ld%%）· 当前占用 %@ · 全部缓存约 150–200 MB。",
+            (long)have, (long)total, pct, used];
     } else {
-        self.preloadLabel.text = @"把全部曲绘缓存到本地（约 150–200 MB，Wi-Fi 下大约 10–20 分钟），之后浏览就不会再出现灰块。";
+        self.preloadLabel.text = [NSString stringWithFormat:
+            @"当前占用 %@。把全部曲绘缓存到本地约 150–200 MB，Wi-Fi 下大约 10–20 分钟。", used];
     }
 }
 

@@ -30,6 +30,9 @@
 /// 已经缓存到本地的曲绘数量（预加载进度从这里起算）
 + (NSInteger)cachedCoverCount;
 
+/// 曲绘缓存占用的磁盘空间（字节）
++ (unsigned long long)coverCacheSize;
+
 /// 是否已经完整预加载过（用库目录里的标记文件判断）
 + (BOOL)coversPreloaded;
 

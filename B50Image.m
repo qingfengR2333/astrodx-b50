@@ -260,6 +260,20 @@ static BOOL gPreloadStop = NO;
     return n;
 }
 
++ (unsigned long long)coverCacheSize
+{
+    NSFileManager *fm = [NSFileManager defaultManager];
+    NSString *dir = [self coverDir];
+    unsigned long long bytes = 0;
+
+    for (NSString *f in [fm contentsOfDirectoryAtPath:dir error:nil]) {
+        if (![f hasSuffix:@".png"]) continue;
+        NSDictionary *attr = [fm attributesOfItemAtPath:[dir stringByAppendingPathComponent:f] error:nil];
+        bytes += [attr fileSize];
+    }
+    return bytes;
+}
+
 + (void)preloadCoversWithProgress:(void (^)(NSInteger done, NSInteger total))progress
                        completion:(void (^)(NSInteger cached))completion
 {
