@@ -799,7 +799,13 @@ static UIColor *ColorFromHex(NSString *hex)
         [ADXImage clearCovers];
         [self refreshCoverCacheUI];
     }]];
-    UIViewController *host = self.window.rootViewController;
+    UIWindow *win = self.view.window;
+    if (!win) {
+        for (UIWindow *w in [UIApplication sharedApplication].windows) {
+            if (w.isKeyWindow) { win = w; break; }
+        }
+    }
+    UIViewController *host = win.rootViewController;
     while (host.presentedViewController) host = host.presentedViewController;
     [host presentViewController:ac animated:YES completion:nil];
 }
