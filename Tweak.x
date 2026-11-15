@@ -409,7 +409,14 @@ static UINavigationController *gB50Nav;
     gBallLabel.frame = gBall.bounds;
     gBallLabel.text = [ADXSettings text];
     gBallLabel.font = [self fontForBall:side text:gBallLabel.text];
-    gBallLabel.textColor = [UIColor colorWithWhite:1 alpha:[ADXSettings textAlpha]];
+    // 深色球用白字，浅色球（比如默认的白色）用深字，否则看不见
+    UIColor *ballColor = [ADXSettings color];
+    CGFloat br = 0, bg = 0, bb = 0, ba = 1;
+    if (![ballColor getRed:&br green:&bg blue:&bb alpha:&ba]) { br = bg = bb = 0; }
+    CGFloat lum = 0.299 * br + 0.587 * bg + 0.114 * bb;
+    UIColor *ink = (lum > 0.72) ? [UIColor colorWithWhite:0.18 alpha:[ADXSettings textAlpha]]
+                                : [UIColor colorWithWhite:1.0 alpha:[ADXSettings textAlpha]];
+    gBallLabel.textColor = ink;
 
     [self rebuildB50Items];
 

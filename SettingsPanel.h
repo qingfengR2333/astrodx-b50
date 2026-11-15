@@ -11,6 +11,7 @@ extern NSString *const ADXSettingsChangedNotification;
 + (BOOL)showScoresButton;      // 首页是否显示「导出分表」
 + (BOOL)showB50Button;         // 首页是否显示「导出b50表」
 + (BOOL)showImageButton;       // 首页是否显示「导出 b50 成绩图」
++ (BOOL)showBrowsePage;        // 谱面查询是否显示分类浏览页（默认开）
 + (NSString *)text;
 + (CGFloat)size;               // 40 ~ 96
 @end

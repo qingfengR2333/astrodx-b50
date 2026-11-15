@@ -13,6 +13,7 @@ static NSString *const kTextAlphaKey = @"adx.textAlpha";
 static NSString *const kShowScoresKey = @"adx.showScores";
 static NSString *const kShowB50Key    = @"adx.showB50";
 static NSString *const kShowImageKey  = @"adx.showImage";
+static NSString *const kShowBrowseKey = @"adx.showBrowse";
 
 static NSString *HexFromColor(UIColor *c)
 {
@@ -52,7 +53,7 @@ static UIColor *ColorFromHex(NSString *hex)
 + (UIColor *)color
 {
     NSString *hex = [[self d] stringForKey:kColorKey];
-    return ColorFromHex(hex.length ? hex : @"#4385F7");
+    return ColorFromHex(hex.length ? hex : @"#F5F5F5");     // 默认白色
 }
 
 + (CGFloat)alpha
@@ -97,6 +98,12 @@ static UIColor *ColorFromHex(NSString *hex)
 {
     id v = [[self d] objectForKey:kShowImageKey];
     return v ? [[self d] boolForKey:kShowImageKey] : YES;
+}
+
++ (BOOL)showBrowsePage
+{
+    id v = [[self d] objectForKey:kShowBrowseKey];
+    return v ? [[self d] boolForKey:kShowBrowseKey] : YES;
 }
 
 @end
@@ -347,6 +354,9 @@ static UIColor *ColorFromHex(NSString *hex)
     [stack addArrangedSubview:[self switchRow:@"首页显示「导出 b50 成绩图」按钮"
                                           on:[ADXSettings showImageButton]
                                       action:@selector(toggleImage:)]];
+    [stack addArrangedSubview:[self switchRow:@"谱面查询显示分类浏览页"
+                                          on:[ADXSettings showBrowsePage]
+                                      action:@selector(toggleBrowse:)]];
 
     NSUInteger funcEnd = stack.arrangedSubviews.count;
     self.funcViews = [[stack.arrangedSubviews
@@ -683,6 +693,12 @@ static UIColor *ColorFromHex(NSString *hex)
 - (void)toggleImage:(UISwitch *)sw
 {
     [[NSUserDefaults standardUserDefaults] setBool:sw.isOn forKey:kShowImageKey];
+    [[NSNotificationCenter defaultCenter] postNotificationName:ADXSettingsChangedNotification object:nil];
+}
+
+- (void)toggleBrowse:(UISwitch *)sw
+{
+    [[NSUserDefaults standardUserDefaults] setBool:sw.isOn forKey:kShowBrowseKey];
     [[NSNotificationCenter defaultCenter] postNotificationName:ADXSettingsChangedNotification object:nil];
 }
 

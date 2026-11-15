@@ -5,6 +5,8 @@
 #import "ChartFav.h"
 #import "ChartDownloadSheet.h"
 #import "B50Image.h"
+#import "ChartBrowse.h"
+#import "SettingsPanel.h"
 
 static UIColor *ARGB(CGFloat r, CGFloat g, CGFloat b)
 {
@@ -60,6 +62,8 @@ static UIColor *DiffColor(NSInteger d)
 @property (nonatomic, strong) UITableView *suggest;
 @property (nonatomic, strong) UIScrollView *detail;
 @property (nonatomic, strong) UIView *emptyView;
+@property (nonatomic, strong) ADXChartBrowse *browse;
+@property (nonatomic, strong) UIButton *backButton;
 
 @property (nonatomic, copy) NSArray *hits;
 @property (nonatomic, copy) NSArray *song;
@@ -117,7 +121,54 @@ static UIColor *DiffColor(NSInteger d)
     self.detail.hidden = YES;
     [self addSubview:self.detail];
 
+    __weak __typeof(self) weakSelf = self;
+    self.browse = [[ADXChartBrowse alloc] initWithFrame:CGRectZero];
+    self.browse.hidden = YES;
+    self.browse.onSelect = ^(int songId) {
+        [weakSelf showSongById:songId];
+    };
+    self.browse.onFavorites = ^{
+        [weakSelf openFavorites];
+    };
+    [self addSubview:self.browse];
+
+    self.backButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    [self.backButton setTitle:@"‹ 返回" forState:UIControlStateNormal];
+    self.backButton.titleLabel.font = [UIFont systemFontOfSize:15 weight:UIFontWeightMedium];
+    self.backButton.hidden = YES;
+    [self.backButton addTarget:self action:@selector(goBack) forControlEvents:UIControlEventTouchUpInside];
+    [self addSubview:self.backButton];
+
     [self buildEmptyView];
+
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(settingsChanged)
+                                                 name:ADXSettingsChangedNotification
+                                               object:nil];
+}
+
+- (void)dealloc
+{
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
+}
+
+- (void)settingsChanged
+{
+    [self refreshVisibility];
+    [self setNeedsLayout];
+}
+
+- (void)goBack
+{
+    self.song = nil;
+    self.hits = @[];
+    [self.suggest reloadData];
+    self.search.text = @"";
+    [self.search resignFirstResponder];
+    for (UIView *v in [self.detail.subviews copy]) [v removeFromSuperview];
+    [self.detail setContentOffset:CGPointZero animated:NO];
+    [self.browse reload];
+    [self refreshVisibility];
 }
 
 - (NSAttributedString *)hintText
@@ -171,13 +222,15 @@ static UIColor *DiffColor(NSInteger d)
     CGFloat H = self.bounds.size.height;
 
     self.search.frame = CGRectMake(8, 4, W - 16, 46);
-    CGFloat hy = CGRectGetMaxY(self.search.frame) - 4;
+    CGFloat hy = CGRectGetMaxY(self.search.frame) + 4;      // 提示行整体下移一倍间距
     CGSize hs = [self.hintLabel sizeThatFits:CGSizeMake(W - 32, 60)];
     self.hintLabel.frame = CGRectMake(16, hy, W - 32, hs.height);
 
     CGFloat top = CGRectGetMaxY(self.hintLabel.frame) + 8;
     self.detail.frame = CGRectMake(0, top, W, MAX(0, H - top));
     self.emptyView.frame = self.detail.frame;
+    self.browse.frame = self.detail.frame;
+    self.backButton.frame = CGRectMake(12, top + 2, 76, 30);
 
     UIView *icon = [self.emptyView viewWithTag:901];
     UILabel *tip = (UILabel *)[self.emptyView viewWithTag:902];
@@ -194,11 +247,18 @@ static UIColor *DiffColor(NSInteger d)
 - (void)refreshVisibility
 {
     BOOL hasHits = self.hits.count > 0;
+    BOOL hasSong = (self.song != nil);
+    BOOL emptyQuery = (self.search.text.length == 0);
+    BOOL browseOn = [ADXSettings showBrowsePage] && !hasHits && !hasSong && emptyQuery;
+
     self.suggest.hidden = !hasHits;
     self.hintLabel.hidden = hasHits;          // 候选浮层出现时收起提示，避免被压住半行
-    self.emptyView.hidden = (self.song != nil) || hasHits;
-    self.detail.hidden = (self.song == nil);
+    self.detail.hidden = !hasSong;
+    self.backButton.hidden = !hasSong;
+    self.browse.hidden = !browseOn;
+    self.emptyView.hidden = hasSong || hasHits || browseOn;
     if (hasHits) [self bringSubviewToFront:self.suggest];
+    if (hasSong) [self bringSubviewToFront:self.backButton];
 }
 
 #pragma mark - 搜索
@@ -288,7 +348,7 @@ static UIColor *DiffColor(NSInteger d)
 
     CGFloat W = self.bounds.size.width - 32;
     CGFloat x = 16;
-    CGFloat y0 = 4;
+    CGFloat y0 = 44;          // 顶部留出「返回」按钮的高度
     CGFloat y = y0 + 12;
 
     // 曲绘
