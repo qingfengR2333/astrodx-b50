@@ -384,9 +384,10 @@ static NSCache *FavCoverCache(void)
     [UIView performWithoutAnimation:^{
         [self rebuildGroups];
     }];
-    if (self.table.numberOfSections > 0)
-        [self.table scrollToRowAtIndexPath:[NSIndexPath indexPathForRow:0 inSection:0]
-                          atScrollPosition:UITableViewScrollPositionTop animated:NO];
+    // 分组默认全是收起的，此时没有任何行；直接跳第一行会越界崩溃，
+    // 所以只把滚动位置拉回顶部。
+    if (self.table.contentOffset.y > 0)
+        [self.table setContentOffset:CGPointZero animated:NO];
 }
 
 static NSDictionary *FavRateMap(void)
@@ -563,6 +564,7 @@ static NSString *FavLevelBucket(double v)
     }
     self.groups = groups;
 
+    [self.table.layer removeAllAnimations];
     self.empty.hidden = (self.songs.count > 0);
     self.empty.text = self.all.count ? @"没有匹配的曲目" : @"还没有收藏的曲目";
     [self.table reloadData];
