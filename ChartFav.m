@@ -398,6 +398,8 @@ static NSCache *FavCoverCache(void)
 
 - (void)chipTapped:(UIButton *)b
 {
+    if (self.selecting) [self setSelectingMode:NO];
+
     self.mode = b.tag;
     [self refreshChips];
     [UIView performWithoutAnimation:^{
@@ -601,6 +603,8 @@ static NSString *FavLevelBucket(double v)
 
 - (void)expandAllTapped
 {
+    if (self.selecting) return;
+
     BOOL allOpen = (self.groups.count > 0);
     for (NSDictionary *g in self.groups) {
         if (![self.openKeys containsObject:g[@"title"]]) { allOpen = NO; break; }
@@ -618,7 +622,7 @@ static NSString *FavLevelBucket(double v)
 
 - (void)refreshExpandTitle
 {
-    self.expandButton.hidden = NO;
+    self.expandButton.hidden = self.selecting;
 
     BOOL allOpen = (self.groups.count > 0);
     for (NSDictionary *g in self.groups) {
@@ -681,20 +685,15 @@ static NSString *FavLevelBucket(double v)
     CGFloat h = self.card.bounds.size.height;
     CGFloat barH = on ? 60 : 0;
 
-    if (on) {
-        self.mode = 0;
-        [self refreshChips];
-        [self rebuildGroups];
-    }
 
     // 关掉隐式动画，避免「选择/完成」切换时整块渐隐渐显
     [UIView performWithoutAnimation:^{
         self.bottomBar.hidden = !on;
         self.bottomBar.frame = CGRectMake(0, h - barH, w, barH);
         self.search.hidden = on;
-        self.chipScroll.hidden = on;
         self.expandButton.hidden = on;
-        CGFloat top = on ? 50 : 138;
+        self.chipScroll.hidden = NO;
+        CGFloat top = 138;
         self.table.frame = CGRectMake(0, top, w, h - top - barH);
         [self.table reloadData];
         [self refreshHeader];
@@ -749,11 +748,22 @@ static NSString *FavLevelBucket(double v)
     if (g.state == UIGestureRecognizerStateBegan) {
         NSIndexPath *ip = [self.table indexPathForRowAtPoint:p];
         if (!ip) return;
+
+        NSArray *hit = [self songAt:ip];
+        if (!hit) return;
+        NSInteger sid = [hit[0] intValue];
+
         if (!self.selecting) [self setSelectingMode:YES];
+
+        NSInteger idx = NSNotFound;
+        for (NSUInteger i = 0; i < self.songs.count; i++) {
+            if ([self.songs[i][0] intValue] == sid) { idx = (NSInteger)i; break; }
+        }
+        if (idx == NSNotFound) return;
 
         // 记住拖动前已有的选中项，拖动只做并集，不清空别人
         self.dragBase = [NSMutableSet setWithSet:self.picked];
-        self.dragStart = ip.row;
+        self.dragStart = idx;
         self.dragPoint = p;
         self.dragOrigin = p;
         self.dragged = NO;          // 只是长按、还没滑动 → 不许自动滚动
