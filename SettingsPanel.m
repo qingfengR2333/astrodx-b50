@@ -784,12 +784,22 @@ static UIColor *ADXCRed(void)
                              forState:UIControlStateNormal];
     [self.preloadButton setTitleColor:[UIColor secondaryLabelColor] forState:UIControlStateDisabled];
 
-    self.preloadProgress.hidden = !busy;
+    if (busy) return;                 // 进度由 preloadTapped 的回调维护
 
-    if (busy) return;                 // 进度文案由 preloadTapped 维护
+    // 空闲时也把「已缓存多少」画出来，和微信/QQ 的缓存条一致
+    NSInteger total = (NSInteger)[ADXChartDb songs].count;
+    NSInteger have = [ADXImage cachedCoverCount];
+    self.preloadProgress.hidden = NO;
+    self.preloadProgress.progress = total ? (CGFloat)have / (CGFloat)total : 0;
 
+    long pct = total ? (long)(have * 100 / total) : 0;
     if (done) {
-        self.preloadLabel.text = @"曲绘已全部缓存到本地，浏览时不会再出现灰块。可随时删除。";
+        self.preloadLabel.text = [NSString stringWithFormat:@"已缓存 %ld / %ld（100%%）· 可随时删除。",
+                                  (long)total, (long)total];
+    } else if (have > 0) {
+        self.preloadLabel.text = [NSString stringWithFormat:
+            @"已缓存 %ld / %ld（%ld%%）· 全部缓存约 150–200 MB，Wi-Fi 下 10–20 分钟。",
+            (long)have, (long)total, pct];
     } else {
         self.preloadLabel.text = @"把全部曲绘缓存到本地（约 150–200 MB，Wi-Fi 下大约 10–20 分钟），之后浏览就不会再出现灰块。";
     }
@@ -800,8 +810,6 @@ static UIColor *ADXCRed(void)
     if (self.preloading) {            // 再次点击 = 取消
         [ADXImage cancelPreload];
         self.preloading = NO;
-        self.preloadProgress.hidden = YES;
-        self.preloadLabel.text = @"已取消加载。已下载的曲绘会保留，下次可以继续。";
         [self refreshCoverCacheUI];
         return;
     }
@@ -827,12 +835,6 @@ static UIColor *ADXCRed(void)
         __typeof(weakSelf) me = weakSelf;
         if (!me) return;
         me.preloading = NO;
-        me.preloadProgress.hidden = YES;
-        if ([ADXImage coversPreloaded]) {
-            me.preloadLabel.text = @"曲绘已全部缓存到本地，浏览时不会再出现灰块。可随时删除。";
-        } else {
-            me.preloadLabel.text = @"已取消加载。已下载的曲绘会保留，下次可以继续。";
-        }
         [me refreshCoverCacheUI];
     }];
 }

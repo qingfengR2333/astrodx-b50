@@ -242,10 +242,19 @@ static BOOL gPreloadStop = NO;
 
 + (NSInteger)cachedCoverCount
 {
+    NSFileManager *fm = [NSFileManager defaultManager];
     NSString *dir = [self coverDir];
-    NSArray *files = [[NSFileManager defaultManager] contentsOfDirectoryAtPath:dir error:nil];
+
     NSInteger n = 0;
-    for (NSString *f in files) {
+    for (NSString *f in [fm contentsOfDirectoryAtPath:dir error:nil]) {
+        if ([f hasSuffix:@".png"]) n++;
+    }
+    if (n > 0) return n;
+
+    // 兜底：老目录里如果还有没搬过去的图，也算进来
+    NSString *legacy = [[NSHomeDirectory() stringByAppendingPathComponent:@"Documents"]
+                        stringByAppendingPathComponent:@"covers"];
+    for (NSString *f in [fm contentsOfDirectoryAtPath:legacy error:nil]) {
         if ([f hasSuffix:@".png"]) n++;
     }
     return n;
