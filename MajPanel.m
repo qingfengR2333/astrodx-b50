@@ -5,13 +5,6 @@
 
 #pragma mark - 曲绘缓存（自制谱专用，落在 Caches 里）
 
-static NSString *MajCoverDir(void)
-{
-    NSString *dir = [NSHomeDirectory() stringByAppendingPathComponent:@"Library/Caches/majcovers"];
-    [[NSFileManager defaultManager] createDirectoryAtPath:dir withIntermediateDirectories:YES attributes:nil error:nil];
-    return dir;
-}
-
 static NSCache *MajCoverMem(void)
 {
     static NSCache *c = nil;
@@ -23,12 +16,6 @@ static NSCache *MajCoverMem(void)
     return c;
 }
 
-static NSString *MajCoverPath(NSString *chartId)
-{
-    NSString *name = [chartId stringByReplacingOccurrencesOfString:@"/" withString:@"_"];
-    return [[MajCoverDir() stringByAppendingPathComponent:name] stringByAppendingPathExtension:@"png"];
-}
-
 static void MajLoadCover(NSString *chartId, UIImageView *iv, void (^done)(UIImage *img))
 {
     if (!chartId.length) return;
@@ -36,7 +23,7 @@ static void MajLoadCover(NSString *chartId, UIImageView *iv, void (^done)(UIImag
     UIImage *mem = [MajCoverMem() objectForKey:chartId];
     if (mem) { iv.image = mem; if (done) done(mem); return; }
 
-    NSString *path = MajCoverPath(chartId);
+    NSString *path = [ADXMajData coverPathOf:chartId];
     UIImage *disk = [UIImage imageWithContentsOfFile:path];
     if (disk) {
         [MajCoverMem() setObject:disk forKey:chartId];
@@ -160,7 +147,6 @@ static UIColor *MajInk(int idx)
 - (void)build;
 - (void)buildContentInWidth:(CGFloat)w;
 - (UIButton *)pill:(NSString *)title frame:(CGRect)f;
-- (NSString *)favKey;
 - (void)refreshFav;
 - (void)favTapped;
 - (void)downloadTapped;
@@ -361,21 +347,15 @@ static UIColor *MajInk(int idx)
 
 #pragma mark 交互
 
-- (NSString *)favKey
-{
-    return [NSString stringWithFormat:@"majfav.%@", self.item[@"id"]];
-}
-
 - (void)refreshFav
 {
-    BOOL on = [[NSUserDefaults standardUserDefaults] boolForKey:[self favKey]];
+    BOOL on = [ADXMajData isFavorite:self.item[@"id"]];
     [self.favButton setTitle:(on ? @"已收藏" : @"收藏夹") forState:UIControlStateNormal];
 }
 
 - (void)favTapped
 {
-    BOOL on = ![[NSUserDefaults standardUserDefaults] boolForKey:[self favKey]];
-    [[NSUserDefaults standardUserDefaults] setBool:on forKey:[self favKey]];
+    [ADXMajData toggleFavorite:self.item];
     [self refreshFav];
 }
 
@@ -673,13 +653,9 @@ static UIColor *MajInk(int idx)
 
 - (void)favTapped
 {
-    UIAlertController *ac = [UIAlertController alertControllerWithTitle:@"自制谱收藏"
-                                                               message:@"自制谱的收藏列表还在做，先点曲目详情里的「收藏夹」单条收藏。"
-                                                        preferredStyle:UIAlertControllerStyleAlert];
-    [ac addAction:[UIAlertAction actionWithTitle:@"好" style:UIAlertActionStyleDefault handler:nil]];
-    UIViewController *host = self.window.rootViewController;
-    while (host.presentedViewController) host = host.presentedViewController;
-    [host presentViewController:ac animated:YES completion:nil];
+    [ADXMajFavSheet presentInView:self.window open:^(NSDictionary *item) {
+        [ADXMajSheet presentItem:item inView:self.window];
+    }];
 }
 
 #pragma mark 表格
@@ -709,7 +685,7 @@ static UIColor *MajInk(int idx)
     CGFloat w = tableView.bounds.size.width;
 
     UIView *v = [[UIView alloc] initWithFrame:CGRectMake(0, 0, w, 44)];
-    v.backgroundColor = [UIColor secondarySystemGroupedBackgroundColor];
+    v.backgroundColor = [UIColor clearColor];
     v.tag = section;
 
     UIView *line = [[UIView alloc] initWithFrame:CGRectMake(0, 43.5, w, 0.5)];
@@ -793,6 +769,124 @@ static UIColor *MajInk(int idx)
 - (void)searchBar:(UISearchBar *)searchBar textDidChange:(NSString *)searchText
 {
     if (searchText.length == 0) [self reload];
+}
+
+@end
+
+#pragma mark - 自制谱收藏列表
+
+@interface ADXMajFavSheet : UIView <UITableViewDataSource, UITableViewDelegate>
+@property (nonatomic, strong) UIView *dim;
+@property (nonatomic, strong) UIView *card;
+@property (nonatomic, strong) UITableView *table;
+@property (nonatomic, strong) NSMutableArray *items;
+@property (nonatomic, copy) void (^onOpen)(NSDictionary *item);
++ (void)presentInView:(UIView *)host open:(void (^)(NSDictionary *item))open;
+@end
+
+@implementation ADXMajFavSheet
+
++ (void)presentInView:(UIView *)host open:(void (^)(NSDictionary *))open
+{
+    if (!host) return;
+    ADXMajFavSheet *s = [[ADXMajFavSheet alloc] initWithFrame:host.bounds];
+    s.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    s.onOpen = open;
+    [host addSubview:s];
+    [s build];
+}
+
+- (void)build
+{
+    self.items = [[ADXMajData favoriteItems] mutableCopy];
+
+    self.dim = [[UIView alloc] initWithFrame:self.bounds];
+    self.dim.backgroundColor = [UIColor colorWithWhite:0 alpha:0.32];
+    self.dim.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    [self addSubview:self.dim];
+    [self.dim addGestureRecognizer:[[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(close)]];
+
+    CGFloat w = MIN(520.0, self.bounds.size.width - 48);
+    CGFloat h = MIN(560.0, self.bounds.size.height - 80);
+
+    self.card = [[UIView alloc] initWithFrame:CGRectMake(0, 0, w, h)];
+    self.card.center = CGPointMake(CGRectGetMidX(self.bounds), CGRectGetMidY(self.bounds));
+    self.card.backgroundColor = [UIColor secondarySystemGroupedBackgroundColor];
+    self.card.layer.cornerRadius = 16;
+    self.card.clipsToBounds = YES;
+    self.card.autoresizingMask = UIViewAutoresizingFlexibleLeftMargin | UIViewAutoresizingFlexibleRightMargin |
+                                 UIViewAutoresizingFlexibleTopMargin | UIViewAutoresizingFlexibleBottomMargin;
+    [self addSubview:self.card];
+
+    UILabel *title = [[UILabel alloc] initWithFrame:CGRectMake(16, 0, w - 80, 50)];
+    title.font = [UIFont boldSystemFontOfSize:17];
+    title.text = @"收藏夹";
+    [self.card addSubview:title];
+
+    UIButton *close = [UIButton buttonWithType:UIButtonTypeSystem];
+    close.frame = CGRectMake(w - 60, 0, 48, 50);
+    close.titleLabel.font = [UIFont systemFontOfSize:15];
+    [close setTitle:@"关闭" forState:UIControlStateNormal];
+    [close addTarget:self action:@selector(close) forControlEvents:UIControlEventTouchUpInside];
+    [self.card addSubview:close];
+
+    UIView *line = [[UIView alloc] initWithFrame:CGRectMake(0, 50, w, 0.5)];
+    line.backgroundColor = [UIColor separatorColor];
+    [self.card addSubview:line];
+
+    self.table = [[UITableView alloc] initWithFrame:CGRectMake(0, 50.5, w, h - 50.5) style:UITableViewStylePlain];
+    self.table.dataSource = self;
+    self.table.delegate = self;
+    self.table.rowHeight = 58;
+    self.table.separatorInset = UIEdgeInsetsMake(0, 16, 0, 0);
+    self.table.backgroundColor = [UIColor clearColor];
+    [self.card addSubview:self.table];
+}
+
+- (void)close
+{
+    [UIView animateWithDuration:0.15 animations:^{ self.alpha = 0; } completion:^(BOOL f) {
+        [self removeFromSuperview];
+    }];
+}
+
+- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section
+{
+    return (NSInteger)self.items.count;
+}
+
+- (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath
+{
+    static NSString *rid = @"majfav";
+    UITableViewCell *c = [tableView dequeueReusableCellWithIdentifier:rid];
+    if (!c) c = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:rid];
+
+    NSDictionary *it = self.items[indexPath.row];
+    c.textLabel.text = it[@"title"];
+    c.textLabel.font = [UIFont boldSystemFontOfSize:15];
+    c.detailTextLabel.text = [NSString stringWithFormat:@"%@ · %@", it[@"artist"] ?: @"", it[@"designer"] ?: @""];
+    c.detailTextLabel.font = [UIFont systemFontOfSize:12.5];
+    c.detailTextLabel.textColor = [UIColor secondaryLabelColor];
+    c.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+    c.backgroundColor = [UIColor secondarySystemGroupedBackgroundColor];
+    return c;
+}
+
+- (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath
+{
+    [tableView deselectRowAtIndexPath:indexPath animated:YES];
+    NSDictionary *it = self.items[indexPath.row];
+    if (self.onOpen) self.onOpen(it);
+    [self close];
+}
+
+- (void)tableView:(UITableView *)tableView commitEditingStyle:(UITableViewCellEditingStyle)style forRowAtIndexPath:(NSIndexPath *)indexPath
+{
+    if (style != UITableViewCellEditingStyleDelete) return;
+    NSDictionary *it = self.items[indexPath.row];
+    [ADXMajData toggleFavorite:it];
+    [self.items removeObjectAtIndex:indexPath.row];
+    [tableView deleteRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationFade];
 }
 
 @end

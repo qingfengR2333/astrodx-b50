@@ -31,4 +31,26 @@
         progress:(void (^)(CGFloat ratio, NSString *status))progress
       completion:(void (^)(NSString *folder, NSError *error))completion;
 
+
+#pragma mark - 曲绘缓存（Library/Caches/majcovers）
+
+/// 某张自制谱曲绘的本地路径
++ (NSString *)coverPathOf:(NSString *)chartId;
+
++ (NSInteger)coverCount;
++ (unsigned long long)coverCacheSize;
++ (BOOL)coversPreloaded;
+
+/// 把 majdata 上所有谱面的曲绘下载到本地（分页遍历列表）
++ (void)preloadCoversWithProgress:(void (^)(NSInteger done, NSInteger total))progress
+                       completion:(void (^)(NSInteger cached))completion;
++ (void)cancelCoverPreload;
++ (void)clearCovers;
+
+#pragma mark - 收藏（存在 NSUserDefaults 的 majfavlist 里）
+
++ (NSArray *)favoriteItems;                     // [@{id,title,artist,designer}, ...]
++ (BOOL)isFavorite:(NSString *)chartId;
++ (void)toggleFavorite:(NSDictionary *)item;    // 传入列表项，内部整理字段
+
 @end

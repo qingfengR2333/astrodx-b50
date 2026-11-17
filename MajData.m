@@ -254,4 +254,166 @@ static NSString * const kMajBase = @"https://majdata.net/api3/api";
     });
 }
 
+
+#pragma mark - 曲绘缓存
+
+static NSString *MajCacheDir(void)
+{
+    NSString *dir = [NSHomeDirectory() stringByAppendingPathComponent:@"Library/Caches/majcovers"];
+    [[NSFileManager defaultManager] createDirectoryAtPath:dir
+                             withIntermediateDirectories:YES
+                                              attributes:nil
+                                                   error:nil];
+    return dir;
+}
+
+static NSString *MajCacheMark(void)
+{
+    return [MajCacheDir() stringByAppendingPathComponent:@".preloaded"];
+}
+
+static BOOL gMajStop = NO;
+
++ (NSString *)coverPathOf:(NSString *)chartId
+{
+    if (!chartId.length) return nil;
+    NSString *name = [chartId stringByReplacingOccurrencesOfString:@"/" withString:@"_"];
+    return [[MajCacheDir() stringByAppendingPathComponent:name] stringByAppendingPathExtension:@"png"];
+}
+
++ (NSInteger)coverCount
+{
+    NSInteger n = 0;
+    for (NSString *f in [[NSFileManager defaultManager] contentsOfDirectoryAtPath:MajCacheDir() error:nil]) {
+        if ([f hasSuffix:@".png"]) n++;
+    }
+    return n;
+}
+
++ (unsigned long long)coverCacheSize
+{
+    unsigned long long bytes = 0;
+    NSFileManager *fm = [NSFileManager defaultManager];
+    for (NSString *f in [fm contentsOfDirectoryAtPath:MajCacheDir() error:nil]) {
+        if (![f hasSuffix:@".png"]) continue;
+        bytes += [[fm attributesOfItemAtPath:[MajCacheDir() stringByAppendingPathComponent:f] error:nil] fileSize];
+    }
+    return bytes;
+}
+
++ (BOOL)coversPreloaded
+{
+    return [[NSFileManager defaultManager] fileExistsAtPath:MajCacheMark()];
+}
+
++ (void)cancelCoverPreload
+{
+    gMajStop = YES;
+}
+
++ (void)clearCovers
+{
+    gMajStop = YES;
+    NSFileManager *fm = [NSFileManager defaultManager];
+    for (NSString *f in [fm contentsOfDirectoryAtPath:MajCacheDir() error:nil]) {
+        if (![f hasSuffix:@".png"] && ![f isEqualToString:@".preloaded"]) continue;
+        [fm removeItemAtPath:[MajCacheDir() stringByAppendingPathComponent:f] error:nil];
+    }
+}
+
++ (void)preloadCoversWithProgress:(void (^)(NSInteger done, NSInteger total))progress
+                       completion:(void (^)(NSInteger cached))completion
+{
+    gMajStop = NO;
+
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+        NSMutableArray *ids = [NSMutableArray array];
+
+        // 分页取全部谱面（每页 30 条，取到空页或 100 页为止）
+        for (NSInteger page = 0; page < 100; page++) {
+            NSString *url = [NSString stringWithFormat:@"%@/maichart/list?sort=&page=%ld&search=",
+                             kMajBase, (long)page];
+            NSData *data = [self syncData:url timeout:20];
+            if (!data.length) break;
+
+            id obj = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+            if (![obj isKindOfClass:[NSArray class]] || [(NSArray *)obj count] == 0) break;
+
+            for (NSDictionary *it in (NSArray *)obj) {
+                if ([it[@"id"] isKindOfClass:[NSString class]]) [ids addObject:it[@"id"]];
+            }
+            if ([(NSArray *)obj count] < 30) break;
+        }
+
+        NSInteger total = (NSInteger)ids.count;
+        NSInteger cached = [self coverCount];
+        if (progress) dispatch_async(dispatch_get_main_queue(), ^{ progress(cached, total); });
+
+        for (NSInteger i = 0; i < total; i++) {
+            if (gMajStop) break;
+
+            NSString *cid = ids[i];
+            NSString *path = [self coverPathOf:cid];
+
+            if (![[NSFileManager defaultManager] fileExistsAtPath:path]) {
+                NSData *img = [self syncData:[self imageURLOf:cid] timeout:20];
+                if (img.length) {
+                    [img writeToFile:path atomically:YES];
+                    cached++;
+                }
+            }
+
+            if (progress) {
+                NSInteger done = cached;
+                dispatch_async(dispatch_get_main_queue(), ^{ progress(MIN(done, total), total); });
+            }
+        }
+
+        [@"ok" writeToFile:MajCacheMark() atomically:YES encoding:NSUTF8StringEncoding error:nil];
+
+        if (completion) {
+            NSInteger now = [self coverCount];
+            dispatch_async(dispatch_get_main_queue(), ^{ completion(now); });
+        }
+    });
+}
+
+#pragma mark - 收藏
+
++ (NSArray *)favoriteItems
+{
+    NSArray *a = [[NSUserDefaults standardUserDefaults] arrayForKey:@"majfavlist"];
+    return [a isKindOfClass:[NSArray class]] ? a : @[];
+}
+
++ (BOOL)isFavorite:(NSString *)chartId
+{
+    for (NSDictionary *d in [self favoriteItems]) {
+        if ([d[@"id"] isEqualToString:chartId]) return YES;
+    }
+    return NO;
+}
+
++ (void)toggleFavorite:(NSDictionary *)item
+{
+    NSString *cid = item[@"id"];
+    if (!cid.length) return;
+
+    NSMutableArray *list = [[self favoriteItems] mutableCopy];
+    NSInteger hit = -1;
+    for (NSInteger i = 0; i < (NSInteger)list.count; i++) {
+        if ([list[i][@"id"] isEqualToString:cid]) { hit = i; break; }
+    }
+
+    if (hit >= 0) {
+        [list removeObjectAtIndex:hit];
+    } else {
+        [list insertObject:@{@"id": cid,
+                             @"title": item[@"title"] ?: @"",
+                             @"artist": item[@"artist"] ?: @"",
+                             @"designer": item[@"designer"] ?: @""} atIndex:0];
+    }
+    [[NSUserDefaults standardUserDefaults] setObject:list forKey:@"majfavlist"];
+}
+
 @end
