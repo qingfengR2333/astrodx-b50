@@ -192,7 +192,10 @@ static NSString * const kMajBase = @"https://majdata.net/api3/api";
                   [NSString stringWithFormat:@"%@ (%ld)", safe, (long)n++]];
     }
 
-    if (![[NSFileManager defaultManager] createDirectoryAtPath:folder withIntermediateDirectories:YES error:nil]) {
+    if (![[NSFileManager defaultManager] createDirectoryAtPath:folder
+                                     withIntermediateDirectories:YES
+                                                      attributes:nil
+                                                           error:nil]) {
         if (completion) completion(nil, [NSError errorWithDomain:@"ADXMaj" code:-2
             userInfo:@{NSLocalizedDescriptionKey: @"无法创建文件夹"}]);
         return;
