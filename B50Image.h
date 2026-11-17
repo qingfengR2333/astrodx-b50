@@ -33,6 +33,9 @@
 /// 曲绘缓存占用的磁盘空间（字节）
 + (unsigned long long)coverCacheSize;
 
+/// 自制谱曲绘已缓存张数（和官方分开统计）
++ (NSInteger)majCoverCount;
+
 /// 是否已经完整预加载过（用库目录里的标记文件判断）
 + (BOOL)coversPreloaded;
 
