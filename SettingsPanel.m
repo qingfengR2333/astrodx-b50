@@ -807,18 +807,22 @@ static UIColor *ADXCRed(void)
     // 空闲时也把「已缓存多少」画出来，和微信/QQ 的缓存条一致
     NSInteger total = (NSInteger)[ADXChartDb songs].count;
     NSInteger have = [ADXImage cachedCoverCount];
-    self.preloadProgress.hidden = NO;
-    self.preloadProgress.progress = total ? (CGFloat)have / (CGFloat)total : 0;
+    NSInteger maj = [ADXImage majCoverCount];          // 自制谱（majdata）的曲绘
+    NSInteger all = have + maj;
 
-    long pct = total ? (long)(have * 100 / total) : 0;
+    self.preloadProgress.hidden = NO;
+    self.preloadProgress.progress = total ? (CGFloat)all / (CGFloat)total : 0;
+
+    long pct = total ? (long)(all * 100 / total) : 0;
     NSString *used = ADXSizeText([ADXImage coverCacheSize]);
     if (done) {
         self.preloadLabel.text = [NSString stringWithFormat:
-            @"已全部缓存 %ld 张 · 当前占用 %@ · 可随时删除。", (long)total, used];
-    } else if (have > 0) {
+            @"已全部缓存 %ld 张（含自制谱 %ld 张）· 当前占用 %@ · 可随时删除。",
+            (long)all, (long)maj, used];
+    } else if (all > 0) {
         self.preloadLabel.text = [NSString stringWithFormat:
-            @"已缓存 %ld / %ld（%ld%%）· 当前占用 %@ · 全部缓存约 150–200 MB。",
-            (long)have, (long)total, pct, used];
+            @"已缓存 %ld / %ld（%ld%%）· 自制谱 %ld 张 · 当前占用 %@ · 全部缓存约 150–200 MB。",
+            (long)all, (long)total, pct, (long)maj, used];
     } else {
         self.preloadLabel.text = [NSString stringWithFormat:
             @"当前占用 %@。把全部曲绘缓存到本地约 150–200 MB，Wi-Fi 下大约 10–20 分钟。", used];

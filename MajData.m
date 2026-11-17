@@ -144,6 +144,26 @@ static NSString * const kMajBase = @"https://majdata.net/api3/api";
     [t resume];
 }
 
++ (NSData *)syncData:(NSString *)url timeout:(NSTimeInterval)timeout
+{
+    __block NSData *out = nil;
+    dispatch_semaphore_t sem = dispatch_semaphore_create(0);
+
+    NSMutableURLRequest *req = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:url]];
+    [req setValue:@"https://majdata.net/" forHTTPHeaderField:@"Referer"];
+    [req setTimeoutInterval:timeout];
+
+    NSURLSessionDataTask *t = [[NSURLSession sharedSession] dataTaskWithRequest:req
+        completionHandler:^(NSData *data, NSURLResponse *resp, NSError *err) {
+            if (!err && data.length > 0) out = data;
+            dispatch_semaphore_signal(sem);
+        }];
+    [t resume];
+
+    dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, (int64_t)((timeout + 6) * NSEC_PER_SEC)));
+    return out;
+}
+
 + (void)download:(NSDictionary *)item
       includeBGA:(BOOL)includeBGA
         progress:(void (^)(CGFloat ratio, NSString *status))progress
@@ -157,7 +177,6 @@ static NSString * const kMajBase = @"https://majdata.net/api3/api";
         return;
     }
 
-    // 文件名里的非法字符换成下划线
     NSCharacterSet *bad = [NSCharacterSet characterSetWithCharactersInString:@"/\\:*?\"<>|"];
     NSString *safe = [[title componentsSeparatedByCharactersInSet:bad] componentsJoinedByString:@"_"];
     safe = [safe stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
@@ -166,7 +185,6 @@ static NSString * const kMajBase = @"https://majdata.net/api3/api";
     NSString *levels = [NSHomeDirectory() stringByAppendingPathComponent:@"Documents/levels"];
     [[NSFileManager defaultManager] createDirectoryAtPath:levels withIntermediateDirectories:YES attributes:nil error:nil];
 
-    // 重名就加 (2)(3)…
     NSString *folder = [levels stringByAppendingPathComponent:safe];
     NSInteger n = 2;
     while ([[NSFileManager defaultManager] fileExistsAtPath:folder]) {
@@ -174,7 +192,7 @@ static NSString * const kMajBase = @"https://majdata.net/api3/api";
                   [NSString stringWithFormat:@"%@ (%ld)", safe, (long)n++]];
     }
 
-    if (![[NSFileManager defaultManager] createDirectoryAtPath:folder withIntermediateDirectories:YES attributes:nil error:nil]) {
+    if (![[NSFileManager defaultManager] createDirectoryAtPath:folder withIntermediateDirectories:YES error:nil]) {
         if (completion) completion(nil, [NSError errorWithDomain:@"ADXMaj" code:-2
             userInfo:@{NSLocalizedDescriptionKey: @"无法创建文件夹"}]);
         return;
@@ -182,53 +200,55 @@ static NSString * const kMajBase = @"https://majdata.net/api3/api";
 
     NSString *base = [NSString stringWithFormat:@"%@/maichart/%@", kMajBase, cid];
 
-    // maidata 必须成功，其余失败可容忍
-    NSArray *steps = @[
-        @{@"url": [base stringByAppendingString:@"/chart?intent=download"], @"file": @"maidata.txt", @"name": @"谱面", @"need": @YES},
-        @{@"url": [base stringByAppendingString:@"/track"],                 @"file": @"track.mp3",   @"name": @"音频", @"need": @NO},
-        @{@"url": [self imageURLOf:cid],                                    @"file": @"bg.png",      @"name": @"曲绘", @"need": @NO},
-    ];
-    NSMutableArray *all = [steps mutableCopy];
+    NSMutableArray *steps = [NSMutableArray array];
+    [steps addObject:@{@"url": [base stringByAppendingString:@"/chart?intent=download"], @"file": @"maidata.txt", @"name": @"谱面", @"need": @YES}];
+    [steps addObject:@{@"url": [base stringByAppendingString:@"/track"], @"file": @"track.mp3", @"name": @"音频", @"need": @NO}];
+    [steps addObject:@{@"url": [self imageURLOf:cid], @"file": @"bg.png", @"name": @"曲绘", @"need": @NO}];
     if (includeBGA) {
-        [all addObject:@{@"url": [base stringByAppendingString:@"/video"], @"file": @"bg.mp4", @"name": @"BGA", @"need": @NO}];
+        [steps addObject:@{@"url": [base stringByAppendingString:@"/video"], @"file": @"bg.mp4", @"name": @"BGA", @"need": @NO}];
     }
 
-    __block NSInteger idx = 0;
-    __block BOOL failed = NO;
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+        NSInteger total = (NSInteger)steps.count;
+        BOOL failed = NO;
 
-    __block void (^next)(void);
-    __weak __block void (^weakNext)(void);
-    next = ^{
-        if (failed || idx >= (NSInteger)all.count) {
-            if (failed) {
-                [[NSFileManager defaultManager] removeItemAtPath:folder error:nil];
+        for (NSInteger i = 0; i < total; i++) {
+            NSDictionary *st = steps[i];
+            BOOL need = [st[@"need"] boolValue];
+            NSString *name = st[@"name"];
+
+            if (progress) {
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    progress((CGFloat)i / (CGFloat)total,
+                             [NSString stringWithFormat:@"正在下载 %@…（%ld/%ld）", name, (long)(i + 1), (long)total]);
+                });
             }
-            NSString *result = failed ? nil : [folder lastPathComponent];
-            if (completion) completion(result, failed ? [NSError errorWithDomain:@"ADXMaj" code:-3
-                userInfo:@{NSLocalizedDescriptionKey: @"下载失败"}] : nil);
-            return;
-        }
 
-        NSDictionary *st = all[idx];
-        BOOL need = [st[@"need"] boolValue];
-        CGFloat ratio = (CGFloat)idx / (CGFloat)all.count;
-        if (progress) progress(ratio, [NSString stringWithFormat:@"正在下载 %@…", st[@"name"]]);
-
-        [self getData:st[@"url"] completion:^(NSData *data, NSError *err) {
-            if (!data) {
-                if (need) { failed = YES; if (weakNext) weakNext(); return; }
-                idx++;
-                if (weakNext) weakNext();
-                return;
+            NSData *data = [self syncData:st[@"url"] timeout:30];
+            if (!data.length) {
+                if (need) { failed = YES; break; }
+                continue;
             }
+
             NSString *path = [folder stringByAppendingPathComponent:st[@"file"]];
             [data writeToFile:path atomically:YES];
-            idx++;
-            if (weakNext) weakNext();
-        }];
-    };
-    weakNext = next;
-    next();
+        }
+
+        if (failed) {
+            [[NSFileManager defaultManager] removeItemAtPath:folder error:nil];
+        }
+
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (completion) {
+                if (failed) {
+                    completion(nil, [NSError errorWithDomain:@"ADXMaj" code:-3
+                        userInfo:@{NSLocalizedDescriptionKey: @"下载失败，请重试"}]);
+                } else {
+                    completion([folder lastPathComponent], nil);
+                }
+            }
+        });
+    });
 }
 
 @end

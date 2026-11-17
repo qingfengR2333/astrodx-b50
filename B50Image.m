@@ -219,17 +219,38 @@ static NSString *ADXCoverMark(NSString *dir)
     return [[NSFileManager defaultManager] fileExistsAtPath:ADXCoverMark([self coverDir])];
 }
 
-/// 删除所有曲绘缓存（内存 + 磁盘），下次进页面又会按需加载
+/// 自制谱（majdata）曲绘的缓存目录，和官方曲绘分开放
+static NSString *ADXMajCoverDir(void)
+{
+    return [NSHomeDirectory() stringByAppendingPathComponent:@"Library/Caches/majcovers"];
+}
+
+/// 删除所有曲绘缓存（官方 + 自制谱，内存 + 磁盘），下次进页面又会按需加载
 + (void)clearCovers
 {
     gPreloadStop = YES;
 
-    NSString *dir = [self coverDir];
     NSFileManager *fm = [NSFileManager defaultManager];
-    for (NSString *f in [fm contentsOfDirectoryAtPath:dir error:nil]) {
-        if (![f hasSuffix:@".png"] && ![f isEqualToString:@".preloaded"]) continue;
-        [fm removeItemAtPath:[dir stringByAppendingPathComponent:f] error:nil];
+    NSArray *dirs = @[[self coverDir], ADXMajCoverDir()];
+
+    for (NSString *dir in dirs) {
+        for (NSString *f in [fm contentsOfDirectoryAtPath:dir error:nil]) {
+            if (![f hasSuffix:@".png"] && ![f isEqualToString:@".preloaded"]) continue;
+            [fm removeItemAtPath:[dir stringByAppendingPathComponent:f] error:nil];
+        }
     }
+}
+
+/// 自制谱曲绘已缓存多少张（和官方分开统计，设置页会一并显示）
++ (NSInteger)majCoverCount
+{
+    NSInteger n = 0;
+    NSFileManager *fm = [NSFileManager defaultManager];
+    NSString *dir = ADXMajCoverDir();
+    for (NSString *f in [fm contentsOfDirectoryAtPath:dir error:nil]) {
+        if ([f hasSuffix:@".png"]) n++;
+    }
+    return n;
 }
 
 /// 把所有曲目的曲绘下载到本地缓存（设置页「预加载曲绘」用）
@@ -263,13 +284,14 @@ static BOOL gPreloadStop = NO;
 + (unsigned long long)coverCacheSize
 {
     NSFileManager *fm = [NSFileManager defaultManager];
-    NSString *dir = [self coverDir];
     unsigned long long bytes = 0;
 
-    for (NSString *f in [fm contentsOfDirectoryAtPath:dir error:nil]) {
-        if (![f hasSuffix:@".png"]) continue;
-        NSDictionary *attr = [fm attributesOfItemAtPath:[dir stringByAppendingPathComponent:f] error:nil];
-        bytes += [attr fileSize];
+    for (NSString *dir in @[[self coverDir], ADXMajCoverDir()]) {
+        for (NSString *f in [fm contentsOfDirectoryAtPath:dir error:nil]) {
+            if (![f hasSuffix:@".png"]) continue;
+            NSDictionary *attr = [fm attributesOfItemAtPath:[dir stringByAppendingPathComponent:f] error:nil];
+            bytes += [attr fileSize];
+        }
     }
     return bytes;
 }
