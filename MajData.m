@@ -197,6 +197,7 @@ static NSString * const kMajBase = @"https://majdata.net/api3/api";
     __block BOOL failed = NO;
 
     __block void (^next)(void);
+    __weak __block void (^weakNext)(void);
     next = ^{
         if (failed || idx >= (NSInteger)all.count) {
             if (failed) {
@@ -215,17 +216,18 @@ static NSString * const kMajBase = @"https://majdata.net/api3/api";
 
         [self getData:st[@"url"] completion:^(NSData *data, NSError *err) {
             if (!data) {
-                if (need) { failed = YES; next(); return; }
+                if (need) { failed = YES; if (weakNext) weakNext(); return; }
                 idx++;
-                next();
+                if (weakNext) weakNext();
                 return;
             }
             NSString *path = [folder stringByAppendingPathComponent:st[@"file"]];
             [data writeToFile:path atomically:YES];
             idx++;
-            next();
+            if (weakNext) weakNext();
         }];
     };
+    weakNext = next;
     next();
 }
 
