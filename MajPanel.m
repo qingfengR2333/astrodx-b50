@@ -499,7 +499,7 @@ static UIColor *MajInk(int idx)
     [self.favButton addTarget:self action:@selector(favTapped) forControlEvents:UIControlEventTouchUpInside];
     [self addSubview:self.favButton];
 
-    self.table = [[UITableView alloc] initWithFrame:CGRectZero style:UITableViewStylePlain];
+    self.table = [[UITableView alloc] initWithFrame:CGRectZero style:UITableViewStyleGrouped];
     self.table.dataSource = self;
     self.table.delegate = self;
     self.table.rowHeight = 58;
@@ -851,6 +851,8 @@ static UIColor *MajInk(int idx)
     self.table.sectionHeaderHeight = 44;
     self.table.estimatedRowHeight = 0;
     self.table.estimatedSectionHeaderHeight = 0;
+    self.table.sectionHeaderTopPadding = 0;
+    self.table.sectionFooterHeight = 0.01;
     self.table.separatorInset = UIEdgeInsetsZero;
     self.table.backgroundColor = [UIColor clearColor];
     [self.card addSubview:self.table];

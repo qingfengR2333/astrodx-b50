@@ -308,7 +308,9 @@ static double BRRateOf(NSArray *song, NSArray *chart)
     [self.expandButton addTarget:self action:@selector(expandAllTapped) forControlEvents:UIControlEventTouchUpInside];
     [self addSubview:self.expandButton];
 
-    self.table = [[UITableView alloc] initWithFrame:CGRectZero style:UITableViewStylePlain];
+    self.table = [[UITableView alloc] initWithFrame:CGRectZero style:UITableViewStyleGrouped];
+    self.table.sectionHeaderTopPadding = 0;
+    self.table.sectionFooterHeight = 0.01;
     self.table.dataSource = self;
     self.table.delegate = self;
     self.table.rowHeight = 58;
