@@ -404,6 +404,15 @@ static UIColor *MajInk(int idx)
 
 #pragma mark - 面板
 
+@interface ADXMajFavSheet : UIView <UITableViewDataSource, UITableViewDelegate>
+@property (nonatomic, strong) UIView *dim;
+@property (nonatomic, strong) UIView *card;
+@property (nonatomic, strong) UITableView *table;
+@property (nonatomic, strong) NSMutableArray *items;
+@property (nonatomic, copy) void (^onOpen)(NSDictionary *item);
++ (void)presentInView:(UIView *)host open:(void (^)(NSDictionary *item))open;
+@end
+
 @interface ADXMajPanel () <UITableViewDataSource, UITableViewDelegate, UISearchBarDelegate>
 @property (nonatomic, strong) UISearchBar *search;
 @property (nonatomic, strong) UILabel *hint;
@@ -775,14 +784,7 @@ static UIColor *MajInk(int idx)
 
 #pragma mark - 自制谱收藏列表
 
-@interface ADXMajFavSheet : UIView <UITableViewDataSource, UITableViewDelegate>
-@property (nonatomic, strong) UIView *dim;
-@property (nonatomic, strong) UIView *card;
-@property (nonatomic, strong) UITableView *table;
-@property (nonatomic, strong) NSMutableArray *items;
-@property (nonatomic, copy) void (^onOpen)(NSDictionary *item);
-+ (void)presentInView:(UIView *)host open:(void (^)(NSDictionary *item))open;
-@end
+
 
 @implementation ADXMajFavSheet
 
