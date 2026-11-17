@@ -8,6 +8,7 @@
 #import "AboutPanel.h"
 #import "ChartPanel.h"
 #import "ChartDb.h"
+#import "MajPanel.h"
 #import <math.h>
 
 #pragma mark - 颜色
@@ -33,6 +34,7 @@ static UIColor *ADXDiffColor(int d)
 @property (nonatomic, strong) UISegmentedControl *seg;
 @property (nonatomic, strong) UITableView *table;
 @property (nonatomic, strong) ADXChartPanel *chart;
+@property (nonatomic, strong) ADXMajPanel *maj;
 @end
 
 @implementation ADXB50Panel
@@ -49,7 +51,7 @@ static UIColor *ADXDiffColor(int d)
     [super viewDidLoad];
     self.view.backgroundColor = [UIColor systemGroupedBackgroundColor];
 
-    self.seg = [[UISegmentedControl alloc] initWithItems:@[@"B50成绩", @"谱面查询"]];
+    self.seg = [[UISegmentedControl alloc] initWithItems:@[@"B50成绩", @"谱面查询", @"自制谱"]];
     self.seg.selectedSegmentIndex = 0;
     [self.seg addTarget:self action:@selector(segmentChanged) forControlEvents:UIControlEventValueChanged];
     [self.view addSubview:self.seg];
@@ -65,6 +67,10 @@ static UIColor *ADXDiffColor(int d)
     self.chart.coverDir = [ADXImage coverDir];
     self.chart.hidden = YES;
     [self.view addSubview:self.chart];
+
+    self.maj = [[ADXMajPanel alloc] initWithFrame:CGRectZero];
+    self.maj.hidden = YES;
+    [self.view addSubview:self.maj];
 
     // 导航栏按钮由 ADXRuntime 的 rebuildB50Items 统一生成（受设置里的开关控制）
     [self reloadData];
@@ -84,14 +90,18 @@ static UIColor *ADXDiffColor(int d)
     CGRect area = CGRectMake(0, y, W, MAX(0, h));
     self.table.frame = area;
     self.chart.frame = area;
+    self.maj.frame = area;
 }
 
 - (void)segmentChanged
 {
-    BOOL chart = (self.seg.selectedSegmentIndex == 1);
-    self.table.hidden = chart;
-    self.chart.hidden = !chart;
-    if (!chart) [self.table reloadData];
+    NSInteger idx = self.seg.selectedSegmentIndex;
+    self.table.hidden = (idx != 0);
+    self.chart.hidden = (idx != 1);
+    self.maj.hidden = (idx != 2);
+
+    if (idx == 0) [self.table reloadData];
+    if (idx == 2) [self.maj reload];
 }
 
 - (void)exportImage
