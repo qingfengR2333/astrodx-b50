@@ -404,14 +404,7 @@ static UIColor *MajInk(int idx)
 
 #pragma mark - 面板
 
-@interface ADXMajFavSheet : UIView <UITableViewDataSource, UITableViewDelegate>
-@property (nonatomic, strong) UIView *dim;
-@property (nonatomic, strong) UIView *card;
-@property (nonatomic, strong) UITableView *table;
-@property (nonatomic, strong) NSMutableArray *items;
-@property (nonatomic, copy) void (^onOpen)(NSDictionary *item);
-+ (void)presentInView:(UIView *)host open:(void (^)(NSDictionary *item))open;
-@end
+#pragma mark - 面板
 
 @interface ADXMajPanel () <UITableViewDataSource, UITableViewDelegate, UISearchBarDelegate>
 @property (nonatomic, strong) UISearchBar *search;
@@ -427,19 +420,6 @@ static UIColor *MajInk(int idx)
 @property (nonatomic, strong) NSMutableSet *openKeys;
 @property (nonatomic, assign) BOOL loading;
 @property (nonatomic, assign) BOOL defaultOpened;
-
-- (void)build;
-- (void)reload;
-- (UIButton *)capsule:(NSString *)title;
-- (void)refreshChips;
-- (void)chipTapped:(UIButton *)b;
-- (void)expandAllTapped;
-- (void)rebuildFromGroups;
-- (void)refreshExpandTitle;
-- (void)buildDefaultGroupWith:(NSArray *)items;
-- (void)headerTapped:(UITapGestureRecognizer *)g;
-- (NSDictionary *)itemAt:(NSIndexPath *)ip;
-- (void)favTapped;
 @end
 
 @implementation ADXMajPanel
@@ -512,6 +492,9 @@ static UIColor *MajInk(int idx)
     self.table.dataSource = self;
     self.table.delegate = self;
     self.table.rowHeight = 58;
+    self.table.sectionHeaderHeight = 44;
+    self.table.estimatedRowHeight = 0;
+    self.table.estimatedSectionHeaderHeight = 0;
     self.table.separatorInset = UIEdgeInsetsZero;
     self.table.backgroundColor = [UIColor clearColor];
     [self.table registerClass:[ADXMajCell class] forCellReuseIdentifier:@"maj"];
@@ -557,6 +540,11 @@ static UIColor *MajInk(int idx)
         NSString *q = self.search.text ?: @"";
         [ADXMajData listWithSearch:q sort:@"" completion:^(NSArray *items, NSError *error) {
             weakSelf.loading = NO;
+            if (error) {
+                weakSelf.groups = @[];
+                [weakSelf.table reloadData];
+                return;
+            }
             [weakSelf buildDefaultGroupWith:(items ?: @[])];
         }];
         return;
@@ -564,8 +552,7 @@ static UIColor *MajInk(int idx)
 
     NSArray *sorts = @[@"hotp", @"playp", @"like", @"download"];
     NSArray *titles = @[@"游玩", @"评价", @"评论", @"下载"];
-    NSMutableArray *bucket = [NSMutableArray array];
-    for (NSInteger i = 0; i < (NSInteger)sorts.count; i++) bucket[i] = @[];
+    NSMutableArray *bucket = [NSMutableArray arrayWithObjects:@[], @[], @[], @[], nil];
 
     __block NSInteger left = (NSInteger)sorts.count;
     for (NSInteger i = 0; i < (NSInteger)sorts.count; i++) {
@@ -662,8 +649,9 @@ static UIColor *MajInk(int idx)
 
 - (void)favTapped
 {
+    __weak typeof(self) weakSelf = self;
     [ADXMajFavSheet presentInView:self.window open:^(NSDictionary *item) {
-        [ADXMajSheet presentItem:item inView:self.window];
+        [ADXMajSheet presentItem:item inView:weakSelf.window];
     }];
 }
 
@@ -694,7 +682,7 @@ static UIColor *MajInk(int idx)
     CGFloat w = tableView.bounds.size.width;
 
     UIView *v = [[UIView alloc] initWithFrame:CGRectMake(0, 0, w, 44)];
-    v.backgroundColor = [UIColor clearColor];
+    v.backgroundColor = [UIColor systemGroupedBackgroundColor];
     v.tag = section;
 
     UIView *line = [[UIView alloc] initWithFrame:CGRectMake(0, 43.5, w, 0.5)];
@@ -735,6 +723,14 @@ static UIColor *MajInk(int idx)
     [self refreshExpandTitle];
 }
 
+- (NSDictionary *)itemAt:(NSIndexPath *)ip
+{
+    if (ip.section >= (NSInteger)self.groups.count) return nil;
+    NSArray *rows = self.groups[ip.section][@"rows"];
+    if (ip.row >= (NSInteger)rows.count) return nil;
+    return rows[ip.row];
+}
+
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath
 {
     ADXMajCell *cell = [tableView dequeueReusableCellWithIdentifier:@"maj"];
@@ -746,17 +742,8 @@ static UIColor *MajInk(int idx)
     cell.name.text = it[@"title"];
     cell.sub.text = [NSString stringWithFormat:@"%@ · %@", it[@"artist"] ?: @"", it[@"designer"] ?: @""];
     cell.cover.image = nil;
-
     MajLoadCover(it[@"id"], cell.cover, nil);
     return cell;
-}
-
-- (NSDictionary *)itemAt:(NSIndexPath *)ip
-{
-    if (ip.section >= (NSInteger)self.groups.count) return nil;
-    NSArray *rows = self.groups[ip.section][@"rows"];
-    if (ip.row >= (NSInteger)rows.count) return nil;
-    return rows[ip.row];
 }
 
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath
@@ -782,9 +769,16 @@ static UIColor *MajInk(int idx)
 
 @end
 
-#pragma mark - 自制谱收藏列表
-
-
+@interface ADXMajFavSheet : UIView <UITableViewDataSource, UITableViewDelegate, UISearchBarDelegate>
+@property (nonatomic, strong) UIView *dim;
+@property (nonatomic, strong) UIView *card;
+@property (nonatomic, strong) UISearchBar *search;
+@property (nonatomic, strong) UIButton *defaultChip;
+@property (nonatomic, strong) UITableView *table;
+@property (nonatomic, strong) NSMutableArray *items;
+@property (nonatomic, copy) void (^onOpen)(NSDictionary *item);
++ (void)presentInView:(UIView *)host open:(void (^)(NSDictionary *item))open;
+@end
 
 @implementation ADXMajFavSheet
 
@@ -832,15 +826,30 @@ static UIColor *MajInk(int idx)
     [close addTarget:self action:@selector(close) forControlEvents:UIControlEventTouchUpInside];
     [self.card addSubview:close];
 
-    UIView *line = [[UIView alloc] initWithFrame:CGRectMake(0, 50, w, 0.5)];
-    line.backgroundColor = [UIColor separatorColor];
-    [self.card addSubview:line];
+    self.search = [[UISearchBar alloc] initWithFrame:CGRectMake(16, 52, w - 32, 40)];
+    self.search.placeholder = @"搜索收藏的曲目";
+    self.search.searchBarStyle = UISearchBarStyleMinimal;
+    [self.search setBackgroundImage:[[UIImage alloc] init]];
+    self.search.delegate = self;
+    [self.card addSubview:self.search];
 
-    self.table = [[UITableView alloc] initWithFrame:CGRectMake(0, 50.5, w, h - 50.5) style:UITableViewStylePlain];
+    self.defaultChip = [UIButton buttonWithType:UIButtonTypeSystem];
+    self.defaultChip.frame = CGRectMake(16, 96, 66, 30);
+    self.defaultChip.backgroundColor = [UIColor systemBlueColor];
+    self.defaultChip.layer.cornerRadius = 15;
+    self.defaultChip.titleLabel.font = [UIFont systemFontOfSize:14 weight:UIFontWeightMedium];
+    [self.defaultChip setTitle:@"默认" forState:UIControlStateNormal];
+    [self.defaultChip setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
+    [self.card addSubview:self.defaultChip];
+
+    self.table = [[UITableView alloc] initWithFrame:CGRectMake(0, 134, w, h - 134) style:UITableViewStylePlain];
     self.table.dataSource = self;
     self.table.delegate = self;
     self.table.rowHeight = 58;
-    self.table.separatorInset = UIEdgeInsetsMake(0, 16, 0, 0);
+    self.table.sectionHeaderHeight = 44;
+    self.table.estimatedRowHeight = 0;
+    self.table.estimatedSectionHeaderHeight = 0;
+    self.table.separatorInset = UIEdgeInsetsZero;
     self.table.backgroundColor = [UIColor clearColor];
     [self.card addSubview:self.table];
 }
@@ -852,9 +861,57 @@ static UIColor *MajInk(int idx)
     }];
 }
 
+#pragma mark 数据
+
+- (NSArray *)shownItems
+{
+    NSString *q = [self.search.text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+    if (!q.length) return self.items;
+
+    NSMutableArray *out = [NSMutableArray array];
+    for (NSDictionary *it in self.items) {
+        BOOL hit = [it[@"title"] rangeOfString:q options:NSCaseInsensitiveSearch].location != NSNotFound ||
+                   [it[@"artist"] rangeOfString:q options:NSCaseInsensitiveSearch].location != NSNotFound;
+        if (hit) [out addObject:it];
+    }
+    return out;
+}
+
+- (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView { return 1; }
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section
 {
-    return (NSInteger)self.items.count;
+    return (NSInteger)[self shownItems].count;
+}
+
+- (CGFloat)tableView:(UITableView *)tableView heightForHeaderInSection:(NSInteger)section { return 44; }
+
+- (UIView *)tableView:(UITableView *)tableView viewForHeaderInSection:(NSInteger)section
+{
+    CGFloat w = tableView.bounds.size.width;
+    UIView *v = [[UIView alloc] initWithFrame:CGRectMake(0, 0, w, 44)];
+    v.backgroundColor = [UIColor systemGroupedBackgroundColor];
+
+    UIView *line = [[UIView alloc] initWithFrame:CGRectMake(0, 43.5, w, 0.5)];
+    line.backgroundColor = [UIColor separatorColor];
+    [v addSubview:line];
+
+    UIView *bar = [[UIView alloc] initWithFrame:CGRectMake(16, 12, 4, 20)];
+    bar.backgroundColor = [UIColor systemBlueColor];
+    bar.layer.cornerRadius = 2;
+    [v addSubview:bar];
+
+    UILabel *t = [[UILabel alloc] initWithFrame:CGRectMake(28, 0, w - 72, 44)];
+    t.font = [UIFont boldSystemFontOfSize:16];
+    t.text = [NSString stringWithFormat:@"全部收藏（%lu）", (unsigned long)[self shownItems].count];
+    [v addSubview:t];
+
+    UIImageView *chev = [[UIImageView alloc] initWithImage:[UIImage systemImageNamed:@"chevron.down"]];
+    chev.frame = CGRectMake(w - 38, 11, 22, 22);
+    chev.contentMode = UIViewContentModeCenter;
+    chev.tintColor = [UIColor tertiaryLabelColor];
+    [v addSubview:chev];
+
+    return v;
 }
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath
@@ -863,21 +920,29 @@ static UIColor *MajInk(int idx)
     UITableViewCell *c = [tableView dequeueReusableCellWithIdentifier:rid];
     if (!c) c = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:rid];
 
-    NSDictionary *it = self.items[indexPath.row];
+    NSDictionary *it = [self shownItems][indexPath.row];
     c.textLabel.text = it[@"title"];
     c.textLabel.font = [UIFont boldSystemFontOfSize:15];
     c.detailTextLabel.text = [NSString stringWithFormat:@"%@ · %@", it[@"artist"] ?: @"", it[@"designer"] ?: @""];
     c.detailTextLabel.font = [UIFont systemFontOfSize:12.5];
     c.detailTextLabel.textColor = [UIColor secondaryLabelColor];
-    c.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+    c.imageView.image = nil;
     c.backgroundColor = [UIColor secondarySystemGroupedBackgroundColor];
+    c.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+    c.separatorInset = UIEdgeInsetsZero;
+
+    NSString *cid = it[@"id"];
+    if (cid.length) {
+        UIImage *cached = [UIImage imageWithContentsOfFile:[ADXMajData coverPathOf:cid]];
+        if (cached) c.imageView.image = cached;
+    }
     return c;
 }
 
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath
 {
     [tableView deselectRowAtIndexPath:indexPath animated:YES];
-    NSDictionary *it = self.items[indexPath.row];
+    NSDictionary *it = [self shownItems][indexPath.row];
     if (self.onOpen) self.onOpen(it);
     [self close];
 }
@@ -885,10 +950,15 @@ static UIColor *MajInk(int idx)
 - (void)tableView:(UITableView *)tableView commitEditingStyle:(UITableViewCellEditingStyle)style forRowAtIndexPath:(NSIndexPath *)indexPath
 {
     if (style != UITableViewCellEditingStyleDelete) return;
-    NSDictionary *it = self.items[indexPath.row];
+    NSDictionary *it = [self shownItems][indexPath.row];
     [ADXMajData toggleFavorite:it];
-    [self.items removeObjectAtIndex:indexPath.row];
-    [tableView deleteRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationFade];
+    [self.items removeObject:it];
+    [tableView reloadData];
+}
+
+- (void)searchBar:(UISearchBar *)searchBar textDidChange:(NSString *)searchText
+{
+    [self.table reloadData];
 }
 
 @end
