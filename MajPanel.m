@@ -125,6 +125,19 @@ static UIColor *MajInk(int idx)
 
 #pragma mark - 详情 + 下载
 
+@interface ADXMajDownloadSheet : UIView
+@property (nonatomic, strong) NSDictionary *item;
+@property (nonatomic, strong) UIView *dim;
+@property (nonatomic, strong) UIView *card;
+@property (nonatomic, strong) UIProgressView *bar;
+@property (nonatomic, strong) UILabel *status;
+@property (nonatomic, strong) UIButton *main;
+@property (nonatomic, strong) UISwitch *bga;
+@property (nonatomic, copy) NSString *folder;
+@property (nonatomic, assign) BOOL running;
++ (void)presentItem:(NSDictionary *)item host:(UIView *)host;
+@end
+
 @interface ADXMajSheet : UIView
 @property (nonatomic, strong) NSDictionary *item;
 + (instancetype)sheetWithItem:(NSDictionary *)item;
@@ -1046,18 +1059,6 @@ static UIColor *MajInk(int idx)
 
 #pragma mark - 自制谱下载浮层（与官谱同款，去掉「下载选项」）
 
-@interface ADXMajDownloadSheet : UIView
-@property (nonatomic, strong) NSDictionary *item;
-@property (nonatomic, strong) UIView *dim;
-@property (nonatomic, strong) UIView *card;
-@property (nonatomic, strong) UIProgressView *bar;
-@property (nonatomic, strong) UILabel *status;
-@property (nonatomic, strong) UIButton *main;
-@property (nonatomic, strong) UISwitch *bga;
-@property (nonatomic, copy) NSString *folder;
-@property (nonatomic, assign) BOOL running;
-+ (void)presentItem:(NSDictionary *)item host:(UIView *)host;
-@end
 
 @implementation ADXMajDownloadSheet
 
