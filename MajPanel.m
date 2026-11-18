@@ -1084,7 +1084,7 @@ static UIColor *MajInk(int idx)
     [self.dim addGestureRecognizer:tap];
 
     CGFloat w = MIN(520, CGRectGetWidth(self.bounds) - 40);
-    CGFloat h = 300;
+    CGFloat h = 296;
     self.card = [[UIView alloc] initWithFrame:CGRectMake((CGRectGetWidth(self.bounds) - w) / 2,
                                                         (CGRectGetHeight(self.bounds) - h) / 2, w, h)];
     self.card.backgroundColor = [UIColor systemBackgroundColor];
@@ -1116,7 +1116,7 @@ static UIColor *MajInk(int idx)
     pill.textAlignment = NSTextAlignmentCenter;
     pill.font = [UIFont systemFontOfSize:14 weight:UIFontWeightMedium];
     pill.textColor = [UIColor whiteColor];
-    pill.backgroundColor = [UIColor systemBlueColor];
+    pill.backgroundColor = [UIColor colorWithRed:122/255.0 green:114/255.0 blue:240/255.0 alpha:1.0];
     pill.layer.cornerRadius = 8;
     pill.clipsToBounds = YES;
     [self.card addSubview:pill];
@@ -1127,17 +1127,24 @@ static UIColor *MajInk(int idx)
     src.textColor = [UIColor secondaryLabelColor];
     [self.card addSubview:src];
 
-    UILabel *bgaLabel = [[UILabel alloc] initWithFrame:CGRectMake(18, 120, 200, 20)];
+    UILabel *bgaLabel = [[UILabel alloc] initWithFrame:CGRectMake(18, 118, 200, 20)];
     bgaLabel.text = @"包含 BGA 视频";
     bgaLabel.font = [UIFont systemFontOfSize:14];
     [self.card addSubview:bgaLabel];
 
-    self.bga = [[UISwitch alloc] initWithFrame:CGRectMake(w - 68, 116, 51, 31)];
+    self.bga = [[UISwitch alloc] initWithFrame:CGRectMake(w - 68, 114, 51, 31)];
     self.bga.on = NO;
     [self.card addSubview:self.bga];
 
-    self.bar = [[UIProgressView alloc] initWithFrame:CGRectMake(18, 160, w - 36, 4)];
+    UILabel *bgaHint = [[UILabel alloc] initWithFrame:CGRectMake(18, 140, w - 36, 16)];
+    bgaHint.text = @"只影响背景动画，不影响谱面游玩。";
+    bgaHint.font = [UIFont systemFontOfSize:12];
+    bgaHint.textColor = [UIColor secondaryLabelColor];
+    [self.card addSubview:bgaHint];
+
+    self.bar = [[UIProgressView alloc] initWithFrame:CGRectMake(18, 162, w - 36, 4)];
     self.bar.progress = 0;
+    self.bar.hidden = YES;
     [self.card addSubview:self.bar];
 
     self.status = [[UILabel alloc] initWithFrame:CGRectMake(18, 170, w - 36, 18)];
@@ -1163,12 +1170,15 @@ static UIColor *MajInk(int idx)
         self.running = NO;
         self.status.text = @"已取消下载";
         [self.main setTitle:@"开始下载" forState:UIControlStateNormal];
+        self.main.backgroundColor = [UIColor systemBlueColor];
         return;
     }
     if (self.folder) return;
 
     self.running = YES;
+    self.bar.hidden = NO;
     [self.main setTitle:@"取消下载" forState:UIControlStateNormal];
+    self.main.backgroundColor = [UIColor systemRedColor];
     self.status.text = @"正在下载…";
 
     __weak typeof(self) weakSelf = self;
