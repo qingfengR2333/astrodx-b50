@@ -135,7 +135,15 @@ static UIColor *MajInk(int idx)
 @property (nonatomic, strong) UISwitch *bga;
 @property (nonatomic, copy) NSString *folder;
 @property (nonatomic, assign) BOOL running;
+@property (nonatomic, strong) UILabel *titleLabel;
+@property (nonatomic, strong) UIButton *exportButton;
+@property (nonatomic, strong) UILabel *subLabel;
+@property (nonatomic, strong) UILabel *pill;
+@property (nonatomic, strong) UILabel *srcLabel;
+@property (nonatomic, strong) UILabel *bgaLabel;
+@property (nonatomic, strong) UILabel *bgaHint;
 + (void)presentItem:(NSDictionary *)item host:(UIView *)host;
+- (void)layoutCard;
 @end
 
 @interface ADXMajSheet : UIView
@@ -1071,7 +1079,7 @@ static UIColor *MajInk(int idx)
     [host addSubview:s];
     [s build];
     s.alpha = 0;
-    [UIView animateWithDuration:0.2 animations:^{ s.alpha = 1; }];
+    [UIView animateWithDuration:0.18 animations:^{ s.alpha = 1; }];
 }
 
 - (void)build
@@ -1084,77 +1092,73 @@ static UIColor *MajInk(int idx)
     [self.dim addGestureRecognizer:tap];
 
     CGFloat w = MIN(520, CGRectGetWidth(self.bounds) - 40);
-    CGFloat h = 296;
-    self.card = [[UIView alloc] initWithFrame:CGRectMake((CGRectGetWidth(self.bounds) - w) / 2,
-                                                        (CGRectGetHeight(self.bounds) - h) / 2, w, h)];
+    self.card = [[UIView alloc] initWithFrame:CGRectMake((CGRectGetWidth(self.bounds) - w) / 2, 100, w, 260)];
     self.card.backgroundColor = [UIColor systemBackgroundColor];
     self.card.layer.cornerRadius = 16;
     self.card.clipsToBounds = YES;
     [self addSubview:self.card];
 
-    UILabel *title = [[UILabel alloc] initWithFrame:CGRectMake(18, 16, 120, 24)];
-    title.text = @"谱面下载";
-    title.font = [UIFont systemFontOfSize:17 weight:UIFontWeightSemibold];
-    [self.card addSubview:title];
+    self.titleLabel = [[UILabel alloc] initWithFrame:CGRectMake(20, 16, 160, 24)];
+    self.titleLabel.text = @"谱面下载";
+    self.titleLabel.font = [UIFont systemFontOfSize:17 weight:UIFontWeightSemibold];
+    [self.card addSubview:self.titleLabel];
 
-    UIButton *export = [UIButton buttonWithType:UIButtonTypeSystem];
-    export.frame = CGRectMake(w - 100, 14, 84, 28);
-    [export setTitle:@"谱面导出" forState:UIControlStateNormal];
-    export.titleLabel.font = [UIFont systemFontOfSize:15];
-    [export addTarget:self action:@selector(exportTapped) forControlEvents:UIControlEventTouchUpInside];
-    [self.card addSubview:export];
+    self.exportButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    [self.exportButton setTitle:@"谱面导出" forState:UIControlStateNormal];
+    self.exportButton.titleLabel.font = [UIFont systemFontOfSize:15];
+    [self.exportButton addTarget:self action:@selector(exportTapped) forControlEvents:UIControlEventTouchUpInside];
+    [self.card addSubview:self.exportButton];
 
-    UILabel *sub = [[UILabel alloc] initWithFrame:CGRectMake(18, 44, w - 36, 18)];
-    sub.text = [NSString stringWithFormat:@"%@ · %@", self.item[@"title"] ?: @"", self.item[@"artist"] ?: @""];
-    sub.font = [UIFont systemFontOfSize:12];
-    sub.textColor = [UIColor secondaryLabelColor];
-    sub.lineBreakMode = NSLineBreakByTruncatingTail;
-    [self.card addSubview:sub];
+    self.subLabel = [[UILabel alloc] initWithFrame:CGRectZero];
+    self.subLabel.text = [NSString stringWithFormat:@"%@ · %@", self.item[@"title"] ?: @"", self.item[@"artist"] ?: @""];
+    self.subLabel.font = [UIFont systemFontOfSize:12];
+    self.subLabel.textColor = [UIColor secondaryLabelColor];
+    self.subLabel.lineBreakMode = NSLineBreakByTruncatingTail;
+    [self.card addSubview:self.subLabel];
 
-    UILabel *pill = [[UILabel alloc] initWithFrame:CGRectMake(18, 72, 150, 34)];
-    pill.text = @"⤓ 站内下载 .zip";
-    pill.textAlignment = NSTextAlignmentCenter;
-    pill.font = [UIFont systemFontOfSize:14 weight:UIFontWeightMedium];
-    pill.textColor = [UIColor whiteColor];
-    pill.backgroundColor = [UIColor colorWithRed:122/255.0 green:114/255.0 blue:240/255.0 alpha:1.0];
-    pill.layer.cornerRadius = 8;
-    pill.clipsToBounds = YES;
-    [self.card addSubview:pill];
+    self.pill = [[UILabel alloc] initWithFrame:CGRectZero];
+    self.pill.text = @"⤓ 站内下载 .zip";
+    self.pill.textAlignment = NSTextAlignmentCenter;
+    self.pill.font = [UIFont systemFontOfSize:15 weight:UIFontWeightMedium];
+    self.pill.textColor = [UIColor whiteColor];
+    self.pill.backgroundColor = [UIColor colorWithRed:122/255.0 green:114/255.0 blue:240/255.0 alpha:1.0];
+    self.pill.layer.cornerRadius = 10;
+    self.pill.clipsToBounds = YES;
+    [self.card addSubview:self.pill];
 
-    UILabel *src = [[UILabel alloc] initWithFrame:CGRectMake(178, 80, w - 196, 18)];
-    src.text = @"来自 majdata.net";
-    src.font = [UIFont systemFontOfSize:12];
-    src.textColor = [UIColor secondaryLabelColor];
-    [self.card addSubview:src];
+    self.srcLabel = [[UILabel alloc] initWithFrame:CGRectZero];
+    self.srcLabel.text = @"来自 majdata.net";
+    self.srcLabel.font = [UIFont systemFontOfSize:12];
+    self.srcLabel.textColor = [UIColor secondaryLabelColor];
+    [self.card addSubview:self.srcLabel];
 
-    UILabel *bgaLabel = [[UILabel alloc] initWithFrame:CGRectMake(18, 118, 200, 20)];
-    bgaLabel.text = @"包含 BGA 视频";
-    bgaLabel.font = [UIFont systemFontOfSize:14];
-    [self.card addSubview:bgaLabel];
+    self.bgaLabel = [[UILabel alloc] initWithFrame:CGRectZero];
+    self.bgaLabel.text = @"包含 BGA 视频";
+    self.bgaLabel.font = [UIFont systemFontOfSize:15];
+    [self.card addSubview:self.bgaLabel];
 
-    self.bga = [[UISwitch alloc] initWithFrame:CGRectMake(w - 68, 114, 51, 31)];
+    self.bgaHint = [[UILabel alloc] initWithFrame:CGRectZero];
+    self.bgaHint.text = @"只影响背景动画，不影响谱面游玩。";
+    self.bgaHint.font = [UIFont systemFontOfSize:11.5];
+    self.bgaHint.textColor = [UIColor tertiaryLabelColor];
+    [self.card addSubview:self.bgaHint];
+
+    self.bga = [[UISwitch alloc] initWithFrame:CGRectZero];
     self.bga.on = NO;
     [self.card addSubview:self.bga];
 
-    UILabel *bgaHint = [[UILabel alloc] initWithFrame:CGRectMake(18, 140, w - 36, 16)];
-    bgaHint.text = @"只影响背景动画，不影响谱面游玩。";
-    bgaHint.font = [UIFont systemFontOfSize:12];
-    bgaHint.textColor = [UIColor secondaryLabelColor];
-    [self.card addSubview:bgaHint];
-
-    self.bar = [[UIProgressView alloc] initWithFrame:CGRectMake(18, 162, w - 36, 4)];
+    self.bar = [[UIProgressView alloc] initWithFrame:CGRectZero];
     self.bar.progress = 0;
     self.bar.hidden = YES;
     [self.card addSubview:self.bar];
 
-    self.status = [[UILabel alloc] initWithFrame:CGRectMake(18, 170, w - 36, 18)];
+    self.status = [[UILabel alloc] initWithFrame:CGRectZero];
     self.status.font = [UIFont systemFontOfSize:12];
     self.status.textColor = [UIColor secondaryLabelColor];
     self.status.text = @"点下方按钮开始下载";
     [self.card addSubview:self.status];
 
     self.main = [UIButton buttonWithType:UIButtonTypeSystem];
-    self.main.frame = CGRectMake(18, h - 64, w - 36, 46);
     self.main.backgroundColor = [UIColor systemBlueColor];
     [self.main setTitle:@"开始下载" forState:UIControlStateNormal];
     [self.main setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
@@ -1162,6 +1166,44 @@ static UIColor *MajInk(int idx)
     self.main.layer.cornerRadius = 10;
     [self.main addTarget:self action:@selector(mainTapped) forControlEvents:UIControlEventTouchUpInside];
     [self.card addSubview:self.main];
+
+    [self layoutCard];
+}
+
+- (void)layoutCard
+{
+    CGFloat w = self.card.bounds.size.width;
+    CGFloat pad = 20;
+    CGFloat inner = w - pad * 2;
+
+    self.exportButton.frame = CGRectMake(w - pad - 84, 14, 84, 28);
+    self.subLabel.frame = CGRectMake(pad, 44, inner, 18);
+    self.pill.frame = CGRectMake(pad, 70, 150, 44);
+    self.srcLabel.frame = CGRectMake(pad + 162, 82, inner - 162, 18);
+
+    CGFloat y = 126;
+    self.bgaLabel.frame = CGRectMake(pad, y + 4, inner - 60, 20);
+    self.bgaHint.frame = CGRectMake(pad, y + 26, inner - 60, 16);
+    self.bga.frame = CGRectMake(w - pad - 51, y + 4, 51, 31);
+    y += 46;
+
+    if (!self.bar.hidden) {
+        self.bar.frame = CGRectMake(pad, y + 4, inner, 4);
+        self.status.frame = CGRectMake(pad, y + 10, inner, 20);
+        y += 36;
+    } else {
+        self.status.frame = CGRectMake(pad, y + 4, inner, 20);
+        y += 28;
+    }
+
+    self.main.frame = CGRectMake(pad, y + 8, inner, 44);
+    y += 8 + 44;
+    y += 20;
+
+    CGRect f = self.card.frame;
+    f.size.height = y;
+    f.origin.y = MAX(24, round((self.bounds.size.height - y) / 2));
+    self.card.frame = f;
 }
 
 - (void)mainTapped
@@ -1176,10 +1218,18 @@ static UIColor *MajInk(int idx)
     if (self.folder) return;
 
     self.running = YES;
-    self.bar.hidden = NO;
     [self.main setTitle:@"取消下载" forState:UIControlStateNormal];
     self.main.backgroundColor = [UIColor systemRedColor];
     self.status.text = @"正在下载…";
+
+    BOOL grew = self.bar.hidden;
+    self.bar.hidden = NO;
+    if (grew) {
+        [UIView animateWithDuration:0.2 animations:^{
+            [self layoutCard];
+            [self.card layoutIfNeeded];
+        }];
+    }
 
     __weak typeof(self) weakSelf = self;
     [ADXMajData download:self.item includeBGA:self.bga.on progress:^(CGFloat ratio, NSString *status) {
@@ -1201,6 +1251,7 @@ static UIColor *MajInk(int idx)
             } else {
                 weakSelf.status.text = error.localizedDescription ?: @"下载失败";
                 [weakSelf.main setTitle:@"重新下载" forState:UIControlStateNormal];
+                weakSelf.main.backgroundColor = [UIColor systemBlueColor];
             }
         });
     }];
@@ -1230,7 +1281,7 @@ static UIColor *MajInk(int idx)
 
 - (void)close
 {
-    [UIView animateWithDuration:0.18 animations:^{ self.alpha = 0; } completion:^(BOOL finished) {
+    [UIView animateWithDuration:0.15 animations:^{ self.alpha = 0; } completion:^(BOOL finished) {
         [self removeFromSuperview];
     }];
 }
