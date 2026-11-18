@@ -407,6 +407,11 @@ static UIColor *MajInk(int idx)
 
 - (void)downloadTapped
 {
+    [ADXMajDownloadSheet presentItem:self.item host:self.window];
+}
+
+- (void)legacyDownloadTapped
+{
     if (self.running) {
         self.running = NO;
         [self.bar setProgress:0 animated:NO];
@@ -768,9 +773,6 @@ static UIColor *MajInk(int idx)
     v.backgroundColor = [UIColor systemGroupedBackgroundColor];
     v.tag = section;
 
-    UIView *line = [[UIView alloc] initWithFrame:CGRectMake(0, 43.5, w, 0.5)];
-    line.backgroundColor = [UIColor separatorColor];
-    [v addSubview:line];
 
     UIView *bar = [[UIView alloc] initWithFrame:CGRectMake(16, 12, 4, 20)];
     bar.backgroundColor = [UIColor systemBlueColor];
@@ -973,9 +975,6 @@ static UIColor *MajInk(int idx)
     UIView *v = [[UIView alloc] initWithFrame:CGRectMake(0, 0, w, 44)];
     v.backgroundColor = [UIColor systemGroupedBackgroundColor];
 
-    UIView *line = [[UIView alloc] initWithFrame:CGRectMake(0, 43.5, w, 0.5)];
-    line.backgroundColor = [UIColor separatorColor];
-    [v addSubview:line];
 
     UIView *bar = [[UIView alloc] initWithFrame:CGRectMake(16, 12, 4, 20)];
     bar.backgroundColor = [UIColor systemBlueColor];
@@ -1041,6 +1040,188 @@ static UIColor *MajInk(int idx)
 - (void)searchBar:(UISearchBar *)searchBar textDidChange:(NSString *)searchText
 {
     [self.table reloadData];
+}
+
+@end
+
+#pragma mark - 自制谱下载浮层（与官谱同款，去掉「下载选项」）
+
+@interface ADXMajDownloadSheet : UIView
+@property (nonatomic, strong) NSDictionary *item;
+@property (nonatomic, strong) UIView *dim;
+@property (nonatomic, strong) UIView *card;
+@property (nonatomic, strong) UIProgressView *bar;
+@property (nonatomic, strong) UILabel *status;
+@property (nonatomic, strong) UIButton *main;
+@property (nonatomic, strong) UISwitch *bga;
+@property (nonatomic, copy) NSString *folder;
+@property (nonatomic, assign) BOOL running;
++ (void)presentItem:(NSDictionary *)item host:(UIView *)host;
+@end
+
+@implementation ADXMajDownloadSheet
+
++ (void)presentItem:(NSDictionary *)item host:(UIView *)host
+{
+    if (!host) return;
+    ADXMajDownloadSheet *s = [[ADXMajDownloadSheet alloc] initWithFrame:host.bounds];
+    s.item = item;
+    s.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    [host addSubview:s];
+    [s build];
+    s.alpha = 0;
+    [UIView animateWithDuration:0.2 animations:^{ s.alpha = 1; }];
+}
+
+- (void)build
+{
+    self.dim = [[UIView alloc] initWithFrame:self.bounds];
+    self.dim.backgroundColor = [UIColor colorWithWhite:0 alpha:0.38];
+    self.dim.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    [self addSubview:self.dim];
+    UITapGestureRecognizer *tap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(close)];
+    [self.dim addGestureRecognizer:tap];
+
+    CGFloat w = MIN(520, CGRectGetWidth(self.bounds) - 40);
+    CGFloat h = 300;
+    self.card = [[UIView alloc] initWithFrame:CGRectMake((CGRectGetWidth(self.bounds) - w) / 2,
+                                                        (CGRectGetHeight(self.bounds) - h) / 2, w, h)];
+    self.card.backgroundColor = [UIColor systemBackgroundColor];
+    self.card.layer.cornerRadius = 16;
+    self.card.clipsToBounds = YES;
+    [self addSubview:self.card];
+
+    UILabel *title = [[UILabel alloc] initWithFrame:CGRectMake(18, 16, 120, 24)];
+    title.text = @"谱面下载";
+    title.font = [UIFont systemFontOfSize:17 weight:UIFontWeightSemibold];
+    [self.card addSubview:title];
+
+    UIButton *export = [UIButton buttonWithType:UIButtonTypeSystem];
+    export.frame = CGRectMake(w - 100, 14, 84, 28);
+    [export setTitle:@"谱面导出" forState:UIControlStateNormal];
+    export.titleLabel.font = [UIFont systemFontOfSize:15];
+    [export addTarget:self action:@selector(exportTapped) forControlEvents:UIControlEventTouchUpInside];
+    [self.card addSubview:export];
+
+    UILabel *sub = [[UILabel alloc] initWithFrame:CGRectMake(18, 44, w - 36, 18)];
+    sub.text = [NSString stringWithFormat:@"%@ · %@", self.item[@"title"] ?: @"", self.item[@"artist"] ?: @""];
+    sub.font = [UIFont systemFontOfSize:12];
+    sub.textColor = [UIColor secondaryLabelColor];
+    sub.lineBreakMode = NSLineBreakByTruncatingTail;
+    [self.card addSubview:sub];
+
+    UILabel *pill = [[UILabel alloc] initWithFrame:CGRectMake(18, 72, 150, 34)];
+    pill.text = @"⤓ 站内下载 .zip";
+    pill.textAlignment = NSTextAlignmentCenter;
+    pill.font = [UIFont systemFontOfSize:14 weight:UIFontWeightMedium];
+    pill.textColor = [UIColor whiteColor];
+    pill.backgroundColor = [UIColor systemBlueColor];
+    pill.layer.cornerRadius = 8;
+    pill.clipsToBounds = YES;
+    [self.card addSubview:pill];
+
+    UILabel *src = [[UILabel alloc] initWithFrame:CGRectMake(178, 80, w - 196, 18)];
+    src.text = @"来自 majdata.net";
+    src.font = [UIFont systemFontOfSize:12];
+    src.textColor = [UIColor secondaryLabelColor];
+    [self.card addSubview:src];
+
+    UILabel *bgaLabel = [[UILabel alloc] initWithFrame:CGRectMake(18, 120, 200, 20)];
+    bgaLabel.text = @"包含 BGA 视频";
+    bgaLabel.font = [UIFont systemFontOfSize:14];
+    [self.card addSubview:bgaLabel];
+
+    self.bga = [[UISwitch alloc] initWithFrame:CGRectMake(w - 68, 116, 51, 31)];
+    self.bga.on = NO;
+    [self.card addSubview:self.bga];
+
+    self.bar = [[UIProgressView alloc] initWithFrame:CGRectMake(18, 160, w - 36, 4)];
+    self.bar.progress = 0;
+    [self.card addSubview:self.bar];
+
+    self.status = [[UILabel alloc] initWithFrame:CGRectMake(18, 170, w - 36, 18)];
+    self.status.font = [UIFont systemFontOfSize:12];
+    self.status.textColor = [UIColor secondaryLabelColor];
+    self.status.text = @"点下方按钮开始下载";
+    [self.card addSubview:self.status];
+
+    self.main = [UIButton buttonWithType:UIButtonTypeSystem];
+    self.main.frame = CGRectMake(18, h - 64, w - 36, 46);
+    self.main.backgroundColor = [UIColor systemBlueColor];
+    [self.main setTitle:@"开始下载" forState:UIControlStateNormal];
+    [self.main setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
+    self.main.titleLabel.font = [UIFont systemFontOfSize:16 weight:UIFontWeightSemibold];
+    self.main.layer.cornerRadius = 10;
+    [self.main addTarget:self action:@selector(mainTapped) forControlEvents:UIControlEventTouchUpInside];
+    [self.card addSubview:self.main];
+}
+
+- (void)mainTapped
+{
+    if (self.running) {
+        self.running = NO;
+        self.status.text = @"已取消下载";
+        [self.main setTitle:@"开始下载" forState:UIControlStateNormal];
+        return;
+    }
+    if (self.folder) return;
+
+    self.running = YES;
+    [self.main setTitle:@"取消下载" forState:UIControlStateNormal];
+    self.status.text = @"正在下载…";
+
+    __weak typeof(self) weakSelf = self;
+    [ADXMajData download:self.item includeBGA:self.bga.on progress:^(CGFloat ratio, NSString *status) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [weakSelf.bar setProgress:ratio animated:YES];
+            weakSelf.status.text = status;
+        });
+    } completion:^(NSString *folder, NSError *error) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            weakSelf.running = NO;
+            if (folder.length) {
+                weakSelf.folder = folder;
+                [weakSelf.bar setProgress:1 animated:YES];
+                weakSelf.status.text = [NSString stringWithFormat:@"已导入 levels/%@", [folder lastPathComponent]];
+                [weakSelf.main setTitle:@"已导入游戏" forState:UIControlStateNormal];
+                weakSelf.main.backgroundColor = [UIColor tertiarySystemFillColor];
+                [weakSelf.main setTitleColor:[UIColor secondaryLabelColor] forState:UIControlStateNormal];
+                weakSelf.main.enabled = NO;
+            } else {
+                weakSelf.status.text = error.localizedDescription ?: @"下载失败";
+                [weakSelf.main setTitle:@"重新下载" forState:UIControlStateNormal];
+            }
+        });
+    }];
+}
+
+- (void)exportTapped
+{
+    if (!self.folder.length) {
+        self.status.text = @"先下载，再导出 zip";
+        return;
+    }
+    NSString *zip = [NSTemporaryDirectory() stringByAppendingPathComponent:
+                     [[self.folder lastPathComponent] stringByAppendingString:@".zip"]];
+    [[NSFileManager defaultManager] removeItemAtPath:zip error:nil];
+    NSError *err = nil;
+    if (![ADXZip zipDirectory:self.folder to:zip error:&err]) {
+        self.status.text = @"打包失败";
+        return;
+    }
+    UIActivityViewController *ac = [[UIActivityViewController alloc] initWithActivityItems:@[[NSURL fileURLWithPath:zip]]
+                                                                    applicationActivities:nil];
+    UIViewController *host = self.window.rootViewController;
+    while (host.presentedViewController) host = host.presentedViewController;
+    ac.popoverPresentationController.sourceView = self.main;
+    [host presentViewController:ac animated:YES completion:nil];
+}
+
+- (void)close
+{
+    [UIView animateWithDuration:0.18 animations:^{ self.alpha = 0; } completion:^(BOOL finished) {
+        [self removeFromSuperview];
+    }];
 }
 
 @end

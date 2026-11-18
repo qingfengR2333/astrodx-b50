@@ -143,6 +143,8 @@ static UIColor *ColorFromHex(NSString *hex)
 @property (nonatomic, strong) UIButton *clearCoversButton;
 @property (nonatomic, strong) UIProgressView *preloadProgress;
 @property (nonatomic, strong) UIButton *majClearButton;
+@property (nonatomic, strong) UIButton *majPreloadButton;
+@property (nonatomic, assign) BOOL majPreloading;
 @property (nonatomic, strong) UILabel *majLabel;
 @property (nonatomic, strong) UIScrollView *scroll;
 @property (nonatomic, strong) UIStackView *stack;
@@ -457,6 +459,16 @@ static UIColor *ADXCRed(void)
     majRow.alignment = UIStackViewAlignmentFill;
     majRow.translatesAutoresizingMaskIntoConstraints = NO;
     [majRow.heightAnchor constraintEqualToConstant:42].active = YES;
+
+    self.majPreloadButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    self.majPreloadButton.titleLabel.font = [UIFont systemFontOfSize:15 weight:UIFontWeightSemibold];
+    self.majPreloadButton.layer.cornerRadius = 10;
+    self.majPreloadButton.backgroundColor = ADXSteel();
+    [self.majPreloadButton setTitleColor:ADXSteelInk() forState:UIControlStateNormal];
+    [self.majPreloadButton addTarget:self action:@selector(majPreloadTapped)
+                    forControlEvents:UIControlEventTouchUpInside];
+    [majRow addArrangedSubview:self.majPreloadButton];
+
 
     self.majClearButton = [UIButton buttonWithType:UIButtonTypeSystem];
     self.majClearButton.titleLabel.font = [UIFont systemFontOfSize:15 weight:UIFontWeightMedium];
@@ -833,6 +845,10 @@ static UIColor *ADXCRed(void)
 {
     NSInteger have = [ADXMajData coverCount];
     NSString *used = ADXSizeText([ADXMajData coverCacheSize]);
+    BOOL busy = self.majPreloading;
+    [self.majPreloadButton setTitle:(busy ? @"取消加载" : (have > 0 ? @"继续补充曲绘" : @"预加载曲绘"))
+                           forState:UIControlStateNormal];
+    self.majPreloadButton.enabled = YES;
     if (have == 0) {
         self.majLabel.text = [NSString stringWithFormat:
             @"暂无缓存。浏览自制谱时曲绘会自动下载并缓存，当前占用 %@。", used];
@@ -840,6 +856,31 @@ static UIColor *ADXCRed(void)
         self.majLabel.text = [NSString stringWithFormat:
             @"已缓存 %ld 张曲绘 · 当前占用 %@ · 浏览时不会再出现灰块。", (long)have, used];
     }
+}
+
+- (void)majPreloadTapped
+{
+    if (self.majPreloading) {
+        [ADXMajData cancelCoverPreload];
+        self.majPreloading = NO;
+        [self refreshMajCacheUI];
+        return;
+    }
+    self.majPreloading = YES;
+    [self refreshMajCacheUI];
+    __weak typeof(self) weakSelf = self;
+    [ADXMajData preloadCoversWithProgress:^(NSInteger done, NSInteger total) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (!weakSelf) return;
+            weakSelf.majLabel.text = [NSString stringWithFormat:@"正在预加载… %ld / %ld", (long)done, (long)total];
+        });
+    } completion:^(NSInteger cached) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (!weakSelf) return;
+            weakSelf.majPreloading = NO;
+            [weakSelf refreshMajCacheUI];
+        });
+    }];
 }
 
 - (void)majClearTapped
