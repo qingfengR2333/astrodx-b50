@@ -146,6 +146,7 @@ static UIColor *MajInk(int idx)
 @property (nonatomic, strong) UIButton *starButton;
 @property (nonatomic, strong) UIButton *backButton;
 @property (nonatomic, copy) void (^onFavorites)(void);
+@property (nonatomic, copy) void (^onClose)(void);
 
 - (void)build;
 - (void)buildContentInWidth:(CGFloat)w;
@@ -208,11 +209,11 @@ static UIColor *MajInk(int idx)
 {
     UIButton *b = [UIButton buttonWithType:UIButtonTypeSystem];
     b.frame = f;
-    b.backgroundColor = [UIColor secondarySystemBackgroundColor];
+    b.backgroundColor = [UIColor secondarySystemGroupedBackgroundColor];
     b.layer.cornerRadius = 10;
     b.layer.borderWidth = 0.5;
     b.layer.borderColor = [UIColor separatorColor].CGColor;
-    b.titleLabel.font = [UIFont systemFontOfSize:15 weight:UIFontWeightMedium];
+    b.titleLabel.font = [UIFont systemFontOfSize:15 weight:UIFontWeightSemibold];
     [b setTitle:title forState:UIControlStateNormal];
     [b setTitleColor:[UIColor labelColor] forState:UIControlStateNormal];
     return b;
@@ -226,8 +227,10 @@ static UIColor *MajInk(int idx)
     CGFloat cw = w - 32;
 
     UIView *card = [[UIView alloc] initWithFrame:CGRectMake(x, y, cw, 150)];
-    card.backgroundColor = [UIColor secondarySystemBackgroundColor];
+    card.backgroundColor = [UIColor secondarySystemGroupedBackgroundColor];
     card.layer.cornerRadius = 12;
+    card.layer.borderWidth = 0.5;
+    card.layer.borderColor = [UIColor separatorColor].CGColor;
     [self.scroll addSubview:card];
 
     self.cover = [[UIImageView alloc] initWithFrame:CGRectMake(8, 8, 84, 84)];
@@ -365,20 +368,34 @@ static UIColor *MajInk(int idx)
     [self refreshFav];
 
     BOOL on = [ADXMajData isFavorite:self.item[@"id"]];
-    UILabel *tip = [[UILabel alloc] initWithFrame:CGRectMake(0, 0, 160, 38)];
-    tip.backgroundColor = [UIColor colorWithWhite:0 alpha:0.82];
-    tip.textColor = [UIColor whiteColor];
-    tip.font = [UIFont systemFontOfSize:14 weight:UIFontWeightMedium];
-    tip.textAlignment = NSTextAlignmentCenter;
-    tip.layer.cornerRadius = 15;
-    tip.clipsToBounds = YES;
-    tip.text = on ? @"已收藏" : @"已取消收藏";
-    tip.center = CGPointMake(CGRectGetMidX(self.bounds), CGRectGetMaxY(self.bounds) - 104);
-    tip.alpha = 0;
-    [self addSubview:tip];
-    [UIView animateWithDuration:0.18 animations:^{ tip.alpha = 1; } completion:^(BOOL f) {
-        [UIView animateWithDuration:0.3 delay:0.7 options:0 animations:^{ tip.alpha = 0; } completion:^(BOOL f2) {
-            [tip removeFromSuperview];
+    UIView *host = self.window ?: self;
+
+    UILabel *t = [[UILabel alloc] initWithFrame:CGRectZero];
+    t.text = on ? @"已收藏" : @"已取消收藏";
+    t.font = [UIFont systemFontOfSize:13];
+    t.textColor = [UIColor whiteColor];
+    t.backgroundColor = [UIColor colorWithWhite:0 alpha:0.82];
+    t.textAlignment = NSTextAlignmentCenter;
+    t.layer.cornerRadius = 15;
+    t.layer.masksToBounds = YES;
+
+    CGFloat maxW = host.bounds.size.width - 80;
+    CGSize sz = [t sizeThatFits:CGSizeMake(maxW, 30)];
+    CGFloat w = MIN(maxW, sz.width + 30);
+    t.frame = CGRectMake(round((host.bounds.size.width - w) / 2),
+                         CGRectGetMaxY(host.bounds) - 104, w, 30);
+    t.alpha = 0;
+    [host addSubview:t];
+
+    __weak UILabel *weakT = t;
+    [UIView animateWithDuration:0.15 animations:^{
+        weakT.alpha = 1;
+    } completion:^(BOOL ok) {
+        [UIView animateWithDuration:0.25 delay:1.0 options:UIViewAnimationOptionCurveEaseIn
+                         animations:^{
+            weakT.alpha = 0;
+        } completion:^(BOOL done) {
+            [weakT removeFromSuperview];
         }];
     }];
 }
@@ -424,8 +441,10 @@ static UIColor *MajInk(int idx)
 
 - (void)close
 {
+    void (^cb)(void) = self.onClose;
     [UIView animateWithDuration:0.15 animations:^{ self.alpha = 0; } completion:^(BOOL f) {
         [self removeFromSuperview];
+        if (cb) cb();
     }];
 }
 
@@ -690,7 +709,25 @@ static UIColor *MajInk(int idx)
 - (void)showDetail:(NSDictionary *)it
 {
     if (!it) return;
-    [self showDetail:it];
+
+    self.table.hidden = YES;
+    self.chipScroll.hidden = YES;
+    self.expandButton.hidden = YES;
+    self.favButton.hidden = YES;
+
+    ADXMajSheet *sheet = [ADXMajSheet sheetWithItem:it];
+    __weak typeof(self) weakSelf = self;
+    sheet.onFavorites = ^{ [weakSelf favTapped]; };
+    sheet.onClose = ^{
+        weakSelf.table.hidden = NO;
+        weakSelf.chipScroll.hidden = NO;
+        weakSelf.expandButton.hidden = NO;
+        weakSelf.favButton.hidden = NO;
+    };
+    sheet.frame = CGRectMake(0, 68, self.bounds.size.width, self.bounds.size.height - 68);
+    sheet.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    [self addSubview:sheet];
+    [sheet build];
 }
 
 - (void)favTapped
