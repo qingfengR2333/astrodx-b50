@@ -142,10 +142,7 @@ static UIColor *ColorFromHex(NSString *hex)
 @property (nonatomic, strong) UIButton *preloadButton;
 @property (nonatomic, strong) UIButton *clearCoversButton;
 @property (nonatomic, strong) UIProgressView *preloadProgress;
-@property (nonatomic, assign) BOOL majPreloading;
-@property (nonatomic, strong) UIButton *majPreloadButton;
 @property (nonatomic, strong) UIButton *majClearButton;
-@property (nonatomic, strong) UIProgressView *majProgress;
 @property (nonatomic, strong) UILabel *majLabel;
 @property (nonatomic, strong) UIScrollView *scroll;
 @property (nonatomic, strong) UIStackView *stack;
@@ -461,14 +458,6 @@ static UIColor *ADXCRed(void)
     majRow.translatesAutoresizingMaskIntoConstraints = NO;
     [majRow.heightAnchor constraintEqualToConstant:42].active = YES;
 
-    self.majPreloadButton = [UIButton buttonWithType:UIButtonTypeSystem];
-    self.majPreloadButton.titleLabel.font = [UIFont systemFontOfSize:15 weight:UIFontWeightSemibold];
-    self.majPreloadButton.layer.cornerRadius = 10;
-    self.majPreloadButton.layer.masksToBounds = YES;
-    [self.majPreloadButton addTarget:self action:@selector(majPreloadTapped)
-                    forControlEvents:UIControlEventTouchUpInside];
-    [majRow addArrangedSubview:self.majPreloadButton];
-
     self.majClearButton = [UIButton buttonWithType:UIButtonTypeSystem];
     self.majClearButton.titleLabel.font = [UIFont systemFontOfSize:15 weight:UIFontWeightMedium];
     self.majClearButton.layer.cornerRadius = 10;
@@ -483,8 +472,6 @@ static UIColor *ADXCRed(void)
 
     [stack addArrangedSubview:majRow];
 
-    self.majProgress = [[UIProgressView alloc] initWithProgressViewStyle:UIProgressViewStyleDefault];
-    [stack addArrangedSubview:self.majProgress];
 
     self.majLabel = [[UILabel alloc] initWithFrame:CGRectZero];
     self.majLabel.numberOfLines = 0;
@@ -844,58 +831,15 @@ static UIColor *ADXCRed(void)
 
 - (void)refreshMajCacheUI
 {
-    BOOL done = [ADXMajData coversPreloaded];
-    BOOL busy = self.majPreloading;
-
-    NSString *title = busy ? @"取消加载" : (done ? @"已加载" : @"预加载曲绘");
-    [self.majPreloadButton setTitle:title forState:UIControlStateNormal];
-    self.majPreloadButton.enabled = busy || !done;
-    self.majPreloadButton.backgroundColor = (done && !busy) ? [UIColor tertiarySystemFillColor] : ADXSteel();
-    [self.majPreloadButton setTitleColor:(done && !busy) ? [UIColor secondaryLabelColor] : ADXSteelInk()
-                                forState:UIControlStateNormal];
-    [self.majPreloadButton setTitleColor:[UIColor secondaryLabelColor] forState:UIControlStateDisabled];
-
-    if (busy) return;
-
     NSInteger have = [ADXMajData coverCount];
     NSString *used = ADXSizeText([ADXMajData coverCacheSize]);
-    self.majProgress.progress = done ? 1.0 : (have > 0 ? 0.5 : 0.0);
-
     if (have == 0) {
         self.majLabel.text = [NSString stringWithFormat:
-            @"当前占用 %@。把 majdata 上所有自制谱的曲绘缓存到本地，之后浏览就不会再出现灰块。", used];
-    } else if (done) {
-        self.majLabel.text = [NSString stringWithFormat:
-            @"已全部缓存 %ld 张 · 当前占用 %@ · 可随时删除。", (long)have, used];
+            @"暂无缓存。浏览自制谱时曲绘会自动下载并缓存，当前占用 %@。", used];
     } else {
         self.majLabel.text = [NSString stringWithFormat:
-            @"已缓存 %ld 张 · 当前占用 %@ · 点左侧按钮可继续补全。", (long)have, used];
+            @"已缓存 %ld 张曲绘 · 当前占用 %@ · 浏览时不会再出现灰块。", (long)have, used];
     }
-}
-
-- (void)majPreloadTapped
-{
-    if (self.majPreloading) {
-        [ADXMajData cancelCoverPreload];
-        self.majPreloading = NO;
-        [self refreshMajCacheUI];
-        return;
-    }
-    if ([ADXMajData coversPreloaded]) return;
-
-    self.majPreloading = YES;
-    [self.majPreloadButton setTitle:@"取消加载" forState:UIControlStateNormal];
-
-    __weak typeof(self) me = self;
-    [ADXMajData preloadCoversWithProgress:^(NSInteger done, NSInteger total) {
-        if (total <= 0) return;
-        me.majProgress.progress = (float)done / (float)total;
-        me.majLabel.text = [NSString stringWithFormat:@"正在预加载… %ld / %ld（%ld%%）",
-                            (long)done, (long)total, (long)(done * 100 / total)];
-    } completion:^(NSInteger cached) {
-        me.majPreloading = NO;
-        [me refreshMajCacheUI];
-    }];
 }
 
 - (void)majClearTapped

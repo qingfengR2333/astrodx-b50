@@ -127,7 +127,7 @@ static UIColor *MajInk(int idx)
 
 @interface ADXMajSheet : UIView
 @property (nonatomic, strong) NSDictionary *item;
-+ (void)presentItem:(NSDictionary *)item inView:(UIView *)host;
++ (instancetype)sheetWithItem:(NSDictionary *)item;
 @end
 
 @interface ADXMajSheet ()
@@ -143,6 +143,9 @@ static UIColor *MajInk(int idx)
 @property (nonatomic, assign) BOOL running;
 @property (nonatomic, assign) BOOL imported;
 @property (nonatomic, copy) NSString *folder;
+@property (nonatomic, strong) UIButton *starButton;
+@property (nonatomic, strong) UIButton *backButton;
+@property (nonatomic, copy) void (^onFavorites)(void);
 
 - (void)build;
 - (void)buildContentInWidth:(CGFloat)w;
@@ -155,59 +158,50 @@ static UIColor *MajInk(int idx)
 
 @implementation ADXMajSheet
 
-+ (void)presentItem:(NSDictionary *)item inView:(UIView *)host
++ (instancetype)sheetWithItem:(NSDictionary *)item
 {
-    if (!host) return;
-    ADXMajSheet *s = [[ADXMajSheet alloc] initWithFrame:host.bounds];
+    ADXMajSheet *s = [[ADXMajSheet alloc] initWithFrame:CGRectZero];
     s.item = item;
-    s.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-    [host addSubview:s];
-    [s build];
+    return s;
 }
 
 - (void)build
 {
-    self.dim = [[UIView alloc] initWithFrame:self.bounds];
-    self.dim.backgroundColor = [UIColor colorWithWhite:0 alpha:0.32];
-    self.dim.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-    [self addSubview:self.dim];
-    [self.dim addGestureRecognizer:[[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(close)]];
+    self.backgroundColor = [UIColor systemGroupedBackgroundColor];
 
-    CGFloat w = MIN(560.0, self.bounds.size.width - 48);
-    CGFloat h = MIN(620.0, self.bounds.size.height - 80);
+    self.backButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    UIImage *chev = [UIImage systemImageNamed:@"chevron.left"
+                            withConfiguration:[UIImageSymbolConfiguration configurationWithPointSize:15
+                                                                                        weight:UIFontWeightSemibold]];
+    [self.backButton setImage:chev forState:UIControlStateNormal];
+    [self.backButton setTitle:@" 返回" forState:UIControlStateNormal];
+    self.backButton.titleLabel.font = [UIFont systemFontOfSize:16 weight:UIFontWeightMedium];
+    self.backButton.frame = CGRectMake(10, 4, 92, 32);
+    self.backButton.contentHorizontalAlignment = UIControlContentHorizontalAlignmentLeft;
+    [self.backButton addTarget:self action:@selector(close) forControlEvents:UIControlEventTouchUpInside];
+    [self addSubview:self.backButton];
 
-    self.card = [[UIView alloc] initWithFrame:CGRectMake(0, 0, w, h)];
-    self.card.center = CGPointMake(CGRectGetMidX(self.bounds), CGRectGetMidY(self.bounds));
-    self.card.backgroundColor = [UIColor secondarySystemGroupedBackgroundColor];
-    self.card.layer.cornerRadius = 16;
-    self.card.clipsToBounds = YES;
-    self.card.autoresizingMask = UIViewAutoresizingFlexibleLeftMargin | UIViewAutoresizingFlexibleRightMargin |
-                                 UIViewAutoresizingFlexibleTopMargin | UIViewAutoresizingFlexibleBottomMargin;
-    [self addSubview:self.card];
+    CGFloat w = self.bounds.size.width;
+    CGFloat h = self.bounds.size.height;
 
-    self.scroll = [[UIScrollView alloc] initWithFrame:CGRectMake(0, 0, w, h - 64)];
+    self.scroll = [[UIScrollView alloc] initWithFrame:CGRectMake(0, 40, w, h - 40 - 60)];
     self.scroll.alwaysBounceVertical = YES;
-    [self.card addSubview:self.scroll];
+    [self addSubview:self.scroll];
 
     [self buildContentInWidth:w];
 
-    CGFloat by = h - 56;
+    CGFloat by = h - 52;
     CGFloat bw = (w - 32 - 12) / 2;
 
     self.favButton = [self pill:@"收藏夹" frame:CGRectMake(16, by, bw, 42)];
     [self.favButton addTarget:self action:@selector(favTapped) forControlEvents:UIControlEventTouchUpInside];
-    [self.card addSubview:self.favButton];
+    [self addSubview:self.favButton];
 
     self.downloadButton = [self pill:@"谱面下载" frame:CGRectMake(16 + bw + 12, by, bw, 42)];
     [self.downloadButton addTarget:self action:@selector(downloadTapped) forControlEvents:UIControlEventTouchUpInside];
-    [self.card addSubview:self.downloadButton];
+    [self addSubview:self.downloadButton];
 
     [self refreshFav];
-
-    self.alpha = 0;
-    self.card.transform = CGAffineTransformMakeScale(0.94, 0.94);
-    [UIView performWithoutAnimation:^{ self.alpha = 1; }];
-    [UIView animateWithDuration:0.18 animations:^{ self.card.transform = CGAffineTransformIdentity; }];
 }
 
 - (UIButton *)pill:(NSString *)title frame:(CGRect)f
@@ -246,6 +240,13 @@ static UIColor *MajInk(int idx)
 
     CGFloat tx = 8 + 84 + 12;
     CGFloat tw = cw - tx - 8;
+
+    self.starButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    self.starButton.frame = CGRectMake(cw - 40, 6, 32, 32);
+    self.starButton.tintColor = [UIColor systemGray3Color];
+    [self.starButton addTarget:self action:@selector(starTapped) forControlEvents:UIControlEventTouchUpInside];
+    [card addSubview:self.starButton];
+    tw -= 36;
 
     UILabel *title = [[UILabel alloc] initWithFrame:CGRectMake(tx, 10, tw, 44)];
     title.font = [UIFont boldSystemFontOfSize:19];
@@ -350,13 +351,41 @@ static UIColor *MajInk(int idx)
 - (void)refreshFav
 {
     BOOL on = [ADXMajData isFavorite:self.item[@"id"]];
-    [self.favButton setTitle:(on ? @"已收藏" : @"收藏夹") forState:UIControlStateNormal];
+    UIImage *img = [UIImage systemImageNamed:(on ? @"star.fill" : @"star")
+                           withConfiguration:[UIImageSymbolConfiguration configurationWithPointSize:18
+                                                                                       weight:UIFontWeightRegular]];
+    [self.starButton setImage:img forState:UIControlStateNormal];
+    self.starButton.tintColor = on ? [UIColor systemYellowColor] : [UIColor systemGray3Color];
+    [self.favButton setTitle:@"收藏夹" forState:UIControlStateNormal];
+}
+
+- (void)starTapped
+{
+    [ADXMajData toggleFavorite:self.item];
+    [self refreshFav];
+
+    BOOL on = [ADXMajData isFavorite:self.item[@"id"]];
+    UILabel *tip = [[UILabel alloc] initWithFrame:CGRectMake(0, 0, 160, 38)];
+    tip.backgroundColor = [UIColor colorWithWhite:0 alpha:0.82];
+    tip.textColor = [UIColor whiteColor];
+    tip.font = [UIFont systemFontOfSize:14 weight:UIFontWeightMedium];
+    tip.textAlignment = NSTextAlignmentCenter;
+    tip.layer.cornerRadius = 15;
+    tip.clipsToBounds = YES;
+    tip.text = on ? @"已收藏" : @"已取消收藏";
+    tip.center = CGPointMake(CGRectGetMidX(self.bounds), CGRectGetMaxY(self.bounds) - 104);
+    tip.alpha = 0;
+    [self addSubview:tip];
+    [UIView animateWithDuration:0.18 animations:^{ tip.alpha = 1; } completion:^(BOOL f) {
+        [UIView animateWithDuration:0.3 delay:0.7 options:0 animations:^{ tip.alpha = 0; } completion:^(BOOL f2) {
+            [tip removeFromSuperview];
+        }];
+    }];
 }
 
 - (void)favTapped
 {
-    [ADXMajData toggleFavorite:self.item];
-    [self refreshFav];
+    if (self.onFavorites) self.onFavorites();
 }
 
 - (void)downloadTapped
@@ -658,11 +687,17 @@ static UIColor *MajInk(int idx)
     [self.expandButton setTitle:(allOpen ? @"全部折叠" : @"全部展开") forState:UIControlStateNormal];
 }
 
+- (void)showDetail:(NSDictionary *)it
+{
+    if (!it) return;
+    [self showDetail:it];
+}
+
 - (void)favTapped
 {
     __weak typeof(self) weakSelf = self;
     [ADXMajFavSheet presentInView:self.window open:^(NSDictionary *item) {
-        [ADXMajSheet presentItem:item inView:weakSelf.window];
+        [weakSelf showDetail:item];
     }];
 }
 
@@ -762,7 +797,13 @@ static UIColor *MajInk(int idx)
     [tableView deselectRowAtIndexPath:indexPath animated:YES];
     NSDictionary *it = [self itemAt:indexPath];
     if (!it) return;
-    [ADXMajSheet presentItem:it inView:self.window];
+    ADXMajSheet *sheet = [ADXMajSheet sheetWithItem:it];
+    __weak typeof(self) weakSelf = self;
+    sheet.onFavorites = ^{ [weakSelf favTapped]; };
+    sheet.frame = self.bounds;
+    sheet.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    [self addSubview:sheet];
+    [sheet build];
 }
 
 #pragma mark 搜索
